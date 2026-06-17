@@ -1,0 +1,22 @@
+[package]
+name = "ironvein-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ironvein-sim = { path = "../sim" }
+# BIP-340 Schnorr over secp256k1 — pure Rust, wasm32-clean, no getrandom
+# (entropy comes from crypto::fill_random: /dev/urandom natively, a JS shim
+# import in the browser).
+k256 = { version = "0.13", default-features = false, features = ["schnorr", "ecdh", "std"] }
+sha2 = { version = "0.10", default-features = false }
+# AEAD for kind-29000 encrypted signaling payloads (ECDH-derived key).
+# Pure Rust, wasm32-clean.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+
+# On wasm, k256's transitive `getrandom` has no OS entropy source. Rather
+# than pull in wasm-bindgen, we register a custom source backed by the
+# `ivn_random` JS import (see crypto.rs) — same miniquad-plugin style as the
+# rest of the browser boundary.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["custom"] }

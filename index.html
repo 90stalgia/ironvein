@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>IRONVEIN</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #0b0d10; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #loading {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #c8b88a; font: 16px/1.4 monospace; letter-spacing: 1px; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="1"></canvas>
+  <div id="loading">IRONVEIN — booting the valley…</div>
+
+  <!-- macroquad/miniquad JS runtime (vendored in js/) -->
+  <script src="js/mq_js_bundle.js"></script>
+  <!-- IRONVEIN's serverless networking plugin: registered BEFORE wasm loads.
+       The ?v= is a cache-buster — bump it whenever js/ironvein_net.js changes
+       so a reload can't serve a stale copy. -->
+  <script src="js/ironvein_net.js?v=14"></script>
+  <!-- Web Audio plugin: procedural music + SFX, driven by game events from Rust -->
+  <script src="js/ironvein_audio.js?v=2"></script>
+
+  <script>
+    // miniquad calls this once the GL context is up; the plugin's
+    // register_plugin hook has already injected ivn_* into the import table.
+    window.addEventListener("load", function () {
+      load("ironvein.wasm"); // emitted by: cargo build -p ironvein --target wasm32-unknown-unknown --release
+      // hide the splash once the first frame renders
+      const splash = document.getElementById("loading");
+      const obs = new MutationObserver(() => {});
+      setTimeout(() => splash && (splash.style.display = "none"), 1500);
+    });
+  </script>
+</body>
+</html>

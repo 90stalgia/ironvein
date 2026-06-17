@@ -1,0 +1,12 @@
+[package]
+name = "ironvein-seed"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ironvein-seed"
+path = "src/main.rs"
+
+[dependencies]
+ironvein-sim = { path = "../sim" }
+ironvein-net = { path = "../net" }

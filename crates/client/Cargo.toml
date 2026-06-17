@@ -1,0 +1,18 @@
+[package]
+name = "ironvein"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ironvein"
+path = "src/main.rs"
+
+[dependencies]
+ironvein-sim = { path = "../sim" }
+ironvein-net = { path = "../net" }
+macroquad = "=0.4.4"
+
+# Native audio backend (rodio → cpal/ALSA). wasm uses the Web Audio plugin in
+# js/ironvein_audio.js instead, so this is gated off the wasm target entirely.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rodio = "0.17"
