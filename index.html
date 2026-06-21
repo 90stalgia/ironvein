@@ -30,7 +30,9 @@
     // miniquad calls this once the GL context is up; the plugin's
     // register_plugin hook has already injected ivn_* into the import table.
     window.addEventListener("load", function () {
-      load("ironvein.wasm"); // emitted by: cargo build -p ironvein --target wasm32-unknown-unknown --release
+      // ?v= is a cache-buster (GitHub Pages caches aggressively) — bump it on
+      // every deploy so returning visitors don't run a stale wasm.
+      load("ironvein.wasm?v=1"); // emitted by: cargo build -p ironvein --target wasm32-unknown-unknown --release
       // hide the splash once the first frame renders
       const splash = document.getElementById("loading");
       const obs = new MutationObserver(() => {});
