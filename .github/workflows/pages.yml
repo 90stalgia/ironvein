@@ -1,0 +1,67 @@
+name: Deploy wasm to GitHub Pages
+
+# Builds the browser (wasm) client and publishes the static site. The wasm build
+# needs no system libraries — rodio/ALSA is gated off the wasm target, and
+# macroquad uses its web backend.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "js/**"
+      - "index.html"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# Let the Pages deployment read the repo and mint its deploy token.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One live deploy at a time; a newer push supersedes an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build wasm client
+        run: cargo build -p ironvein --target wasm32-unknown-unknown --release
+
+      - name: Assemble the static site
+        # Copy the page + JS shims + the freshly-built wasm, and stamp the wasm URL
+        # with the commit SHA so every deploy busts the browser cache automatically
+        # (no need to hand-bump index.html's ?v=).
+        run: |
+          mkdir -p _site/js
+          cp js/mq_js_bundle.js js/ironvein_net.js js/ironvein_audio.js _site/js/
+          cp target/wasm32-unknown-unknown/release/ironvein.wasm _site/ironvein.wasm
+          sed "s/ironvein\.wasm?v=[A-Za-z0-9]*/ironvein.wasm?v=${GITHUB_SHA::8}/" index.html > _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
