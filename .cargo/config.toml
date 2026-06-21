@@ -1,0 +1,11 @@
+# Browser (wasm) link settings.
+#
+# IRONVEIN's `extern "C"` JS bindings (ivn_audio_play, ivn_url_param, ivn_notify,
+# …) are wasm *imports* — the host JS (js/ironvein_net.js, js/ironvein_audio.js)
+# supplies them at load time. Rust 1.95+ tightened wasm-ld so undefined symbols
+# are a hard link error instead of being emitted as imports (older toolchains did
+# the latter implicitly). `--import-undefined` restores that: undefined symbols
+# become wasm imports for the host to fill in. Without this the release wasm build
+# fails to link on a current toolchain (e.g. GitHub Actions' latest stable).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--import-undefined"]

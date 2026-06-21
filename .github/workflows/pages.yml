@@ -12,6 +12,7 @@ on:
       - "index.html"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
