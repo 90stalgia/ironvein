@@ -4,10 +4,21 @@ A peer-to-peer persistent-world RTS in the old Westwood style —
 isometric 2.5D, 64×32 tiles, ore trucks, tesla-less but proud. One Rust
 workspace, zero game assets (every sprite is drawn procedurally — buildings
 are extruded shaded boxes, units are billboards, terrain is a field of
-diamonds), zero external servers. The world keeps running while you sleep;
+diamonds — and every sound is synthesised in code, from the soundtrack to the
+gunfire), zero external servers. The world keeps running while you sleep;
 your base stands until someone with engineers says otherwise.
 
-![screenshot](shots/ironvein_1.png)
+![IRONVEIN](media/ironvein_1.png)
+
+## Play in the browser
+
+No install — **https://90stalgia.github.io/ironvein/** runs the whole game as
+WebAssembly. Single-player and skirmish-vs-bots are entirely client-side;
+multiplayer is pure peer-to-peer over **WebRTC**, with colonies advertised and
+the connection handshake carried over public **Nostr** relays. No matchmaking
+server, no backend — the page is just static files. (Behind a strict/symmetric
+NAT a direct link may not form; a LAN/VPN or the native build below always
+connects.)
 
 ## What's in the box
 
@@ -112,12 +123,12 @@ arbitrate alone) and your autosave is intact — relaunch from it.
 cargo test --release
 ```
 
-12 tests: serialization round-trips, pathfinding, and the ones that
-matter — two full 1500-tick bot wars simulated twice byte-for-byte
-identically, save/load mid-war continuing on the exact hash, a 4000-tick
-war that actually ends, and two **live TCP loopback** tests covering
-mid-game join, chat both ways, three-way mesh hash equality, and clean
-departure with the base left standing.
+The suite covers serialization round-trips, pathfinding, and the ones that
+matter — full bot wars simulated twice byte-for-byte identically, save/load
+mid-war continuing on the exact hash, a war that actually ends, **live TCP
+loopback** tests (mid-game join, chat both ways, three-way mesh hash equality,
+clean departure with the base left standing, host migration), and the
+**signed-envelope auth** suite that drops forged or replayed frames.
 
 ## Layout
 
@@ -129,12 +140,16 @@ crates/seed    headless world keeper
 ```
 
 `ARCHITECTURE.md` explains the determinism contract, the join/leave
-protocol on the wire, honest limits (lockstep comfortably carries ~8
-players per region) and the documented path from here to a real MMO
-(federated regions, WebRTC/QUIC transport, signed commands).
+protocol on the wire, the signed-envelope auth and the serverless
+**WebRTC + Nostr** stack the browser build runs on, honest limits (lockstep
+comfortably carries ~8 players per region), and the remaining path to a real
+MMO (federated regions).
 
 ## Demo reel
 
 `ironvein --demo --bots 2 --map skirmish` runs an unattended observer
 match and drops three PNGs into `shots/` — that's how the screenshots in
 this README were made (under `xvfb-run` on a headless box, even).
+
+![IRONVEIN](media/ironvein_2.png)
+![IRONVEIN](media/ironvein_3.png)
