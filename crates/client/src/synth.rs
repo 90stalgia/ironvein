@@ -1285,7 +1285,9 @@ pub fn render_stems() -> Vec<(&'static str, Vec<f32>, u16, u32)> {
 }
 
 /// The composed master mix (summed stems + analog glue), as one looping stereo
-/// track — this is what the game plays, so the section dynamics are intact.
+/// track. Used by the native `--render-music` audition (the game itself plays the
+/// adaptive stems from `render_stems`, not this single bounce).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn render_master() -> (Vec<f32>, u16, u32) {
     let n = master_samples();
     let mut master = Stereo::zeros(n);

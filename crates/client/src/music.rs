@@ -299,14 +299,10 @@ fn write_wav_stereo(path: &str, interleaved: &[f32], rate: u32) -> std::io::Resu
 /// audition aid for the procedural soundtrack. Native only.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn render_wav(path: &str) -> std::io::Result<()> {
-    let layers = generate_layers();
-    let mut mix = vec![0.0f32; layers[0].1.len()];
-    for (_, buf, _, _) in &layers {
-        for (m, &s) in mix.iter_mut().zip(buf.iter()) {
-            *m += s * 0.5;
-        }
-    }
-    write_wav_stereo(path, &mix, SR as u32)
+    // The full composed master (summed stems + analog console/tape glue), matching
+    // synth3.py's MASTER_MIX — a truer audition than a flat stem sum.
+    let (buf, _ch, rate) = crate::synth::render_master();
+    write_wav_stereo(path, &buf, rate)
 }
 
 /// Audition the title-screen theme as a 16-bit stereo WAV. Native only.
