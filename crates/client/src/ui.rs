@@ -77,19 +77,20 @@ impl Minimap {
                 let c = if f == 0 {
                     Color::new(0.02, 0.02, 0.03, 1.0)
                 } else {
+                    // alien palette — keep the minimap in step with terrain_tint
                     let mut c = match w.map.terrain_at(t) {
-                        Terrain::Grass => Color::new(0.13, 0.30, 0.12, 1.0),
-                        Terrain::Dirt => Color::new(0.40, 0.30, 0.16, 1.0),
-                        Terrain::Road => Color::new(0.36, 0.34, 0.30, 1.0),
-                        Terrain::Water => Color::new(0.08, 0.22, 0.50, 1.0),
-                        Terrain::Bridge => Color::new(0.45, 0.31, 0.16, 1.0),
-                        Terrain::Rock => Color::new(0.42, 0.42, 0.44, 1.0),
-                        Terrain::Tree => Color::new(0.07, 0.24, 0.09, 1.0),
-                        Terrain::Sand => Color::new(0.74, 0.66, 0.42, 1.0),
-                        Terrain::Snow => Color::new(0.84, 0.88, 0.93, 1.0),
-                        Terrain::Ice => Color::new(0.60, 0.78, 0.88, 1.0),
-                        Terrain::Marsh => Color::new(0.24, 0.29, 0.17, 1.0),
-                        Terrain::Mountain => Color::new(0.30, 0.30, 0.34, 1.0),
+                        Terrain::Grass => Color::new(0.11, 0.34, 0.28, 1.0),
+                        Terrain::Dirt => Color::new(0.42, 0.27, 0.25, 1.0),
+                        Terrain::Road => Color::new(0.35, 0.33, 0.36, 1.0),
+                        Terrain::Water => Color::new(0.05, 0.28, 0.40, 1.0),
+                        Terrain::Bridge => Color::new(0.44, 0.30, 0.28, 1.0),
+                        Terrain::Rock => Color::new(0.42, 0.38, 0.50, 1.0),
+                        Terrain::Tree => Color::new(0.06, 0.27, 0.24, 1.0),
+                        Terrain::Sand => Color::new(0.70, 0.56, 0.54, 1.0),
+                        Terrain::Snow => Color::new(0.86, 0.86, 0.95, 1.0),
+                        Terrain::Ice => Color::new(0.58, 0.78, 0.90, 1.0),
+                        Terrain::Marsh => Color::new(0.20, 0.30, 0.25, 1.0),
+                        Terrain::Mountain => Color::new(0.30, 0.28, 0.40, 1.0),
                     };
                     if w.map.ore_at(t) > 0 {
                         c = Color::new(0.85, 0.72, 0.2, 1.0);

@@ -219,6 +219,18 @@ impl<R: RelayClient> Lobby<R> {
         self.id.pk
     }
 
+    /// Add a beacon subscription for one specific region topic — used to
+    /// discover an invite-only host whose beacon omits the global topic (the
+    /// joiner derives this region from the room code). Duplicate events are
+    /// deduped by id in `poll`, so re-subscribing is harmless.
+    pub fn watch_region(&mut self, region: &str) {
+        self.relay.subscribe(Filter {
+            kinds: vec![KIND_BEACON],
+            topics: vec![region_topic(region)],
+            ..Default::default()
+        });
+    }
+
     /// Host: (re)publish our region beacon. Call ~once a second.
     pub fn advertise(&mut self, beacon: &Beacon, now: u64) {
         let ev = beacon.to_event(&self.id, now);
@@ -296,7 +308,7 @@ mod tests {
         let mut join_lobby = Lobby::new(MockRelay::new(&hub), joiner.clone(), &[], None);
 
         // host advertises region A1
-        let beacon = Beacon { region: "A1".into(), host: host.pk, tick: 1200, players: 2, genesis: 0xABCD, controller: host.pk, controller_name: "keeper".into() };
+        let beacon = Beacon { region: "A1".into(), host: host.pk, tick: 1200, players: 2, genesis: 0xABCD, controller: host.pk, controller_name: "keeper".into(), private: false };
         host_lobby.advertise(&beacon, 1_700_000_000);
 
         // joiner discovers it

@@ -52,11 +52,14 @@ pub struct Settings {
     pub music: f32,
     pub sfx: f32,
     pub edge_scroll: bool,
+    /// preferred faction colour (0..7). The sim still bumps it if it clashes with
+    /// someone already in the world, but this is your first pick.
+    pub color: u8,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { master: 0.9, music: 0.7, sfx: 0.9, edge_scroll: true }
+        Settings { master: 0.9, music: 0.7, sfx: 0.9, edge_scroll: true, color: 0 }
     }
 }
 
@@ -72,6 +75,7 @@ impl Settings {
                         "music" => s.music = v.parse().unwrap_or(s.music),
                         "sfx" => s.sfx = v.parse().unwrap_or(s.sfx),
                         "edge_scroll" => s.edge_scroll = v == "1",
+                        "color" => s.color = v.parse().map(|c: u8| c % 8).unwrap_or(s.color),
                         _ => {}
                     }
                 }
@@ -82,11 +86,12 @@ impl Settings {
 
     pub fn save(&self) {
         let text = format!(
-            "master={}\nmusic={}\nsfx={}\nedge_scroll={}\n",
+            "master={}\nmusic={}\nsfx={}\nedge_scroll={}\ncolor={}\n",
             self.master,
             self.music,
             self.sfx,
-            if self.edge_scroll { 1 } else { 0 }
+            if self.edge_scroll { 1 } else { 0 },
+            self.color,
         );
         pref_save("settings", &text);
     }
@@ -151,6 +156,112 @@ pub fn slider(r: Rect, label: &str, value: f32, m: Vec2, down: bool) -> f32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Multiplayer lobby (wasm) — browse live colonies on the relays, or found a new
+// one. The browser flow shows this between picking a mode and connecting; native
+// uses --host/--join from the CLI instead.
+// ---------------------------------------------------------------------------
+
+/// One browsable game row, prepared by the client from a Nostr region beacon.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub struct LobbyRow {
+    pub title: String, // e.g. "Ada's colony · Sector B2"
+    pub sub: String,   // e.g. "3 players · day 5"
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub enum LobbyAction {
+    Join(usize),
+    Host,
+    /// dial the invite-only host behind the typed room code
+    JoinCode,
+    /// found a new colony that's invite-only (share `my_code` to let friends in)
+    HostPrivate,
+    None,
+}
+
+/// Draw the lobby for one frame and report what (if anything) was clicked. The
+/// caller pumps the matchmaker, rebuilds `games` from live beacons, owns the
+/// `code_input` text buffer (feeding it keystrokes), and passes `my_code` (our
+/// own shareable room code) for display. The caller acts on the returned action.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub fn lobby_screen(
+    name: &str,
+    color: u8,
+    games: &[LobbyRow],
+    my_code: &str,
+    code_input: &str,
+    m: Vec2,
+    click: bool,
+) -> LobbyAction {
+    clear_background(BLACK);
+    backdrop();
+    let sh = screen_height();
+    let cx = screen_width() * 0.5;
+    let dim = Color::new(0.6, 0.58, 0.5, 1.0);
+    centered("MULTIPLAYER", cx, sh * 0.11, 40.0, ACCENT);
+    // your identity: name + colour swatch
+    let id = format!("playing as {name}");
+    let idw = measure_text(&id, None, 18, 1.0).width;
+    draw_text(&id, cx - idw * 0.5 - 16.0, sh * 0.11 + 28.0, 18.0, CREAM);
+    draw_rectangle(cx + idw * 0.5 - 4.0, sh * 0.11 + 15.0, 16.0, 16.0, crate::gfx::PLAYER_COLORS[(color % 8) as usize]);
+
+    centered("LIVE COLONIES", cx, sh * 0.22, 20.0, CREAM);
+    let (lw, lh) = (540.0, 50.0);
+    let lx = cx - lw * 0.5;
+    let mut ly = sh * 0.25;
+    let mut action = LobbyAction::None;
+    if games.is_empty() {
+        centered("· · · scanning the relays · · ·", cx, ly + 26.0, 16.0, dim);
+        centered("no colonies found yet — found your own below", cx, ly + 50.0, 15.0, dim);
+    } else {
+        for (i, g) in games.iter().enumerate().take(5) {
+            let r = Rect::new(lx, ly, lw, lh);
+            let hot = r.contains(m);
+            draw_rectangle(r.x, r.y, r.w, r.h, if hot { Color::new(0.18, 0.15, 0.13, 0.96) } else { Color::new(0.10, 0.10, 0.12, 0.92) });
+            draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, if hot { ACCENT } else { Color::new(0.34, 0.30, 0.26, 0.9) });
+            draw_text(&g.title, r.x + 14.0, r.y + 22.0, 18.0, CREAM);
+            draw_text(&g.sub, r.x + 14.0, r.y + 40.0, 14.0, dim);
+            draw_text("JOIN >", r.x + r.w - 72.0, r.y + 31.0, 18.0, if hot { Color::new(1.0, 0.92, 0.78, 1.0) } else { dim });
+            if hot && click {
+                crate::audio::sfx("radar", 0.5);
+                action = LobbyAction::Join(i);
+            }
+            ly += lh + 8.0;
+        }
+    }
+
+    // ---- invite-only panel (room-code rendezvous) ----
+    let py = sh - 196.0;
+    centered("- PRIVATE  ·  INVITE ONLY -", cx, py, 16.0, Color::new(0.78, 0.6, 0.9, 1.0));
+    // a text field for the code your friend gave you
+    let ib = Rect::new(cx - 270.0, py + 16.0, 350.0, 44.0);
+    let ib_hot = ib.contains(m);
+    draw_rectangle(ib.x, ib.y, ib.w, ib.h, Color::new(0.08, 0.07, 0.10, 0.95));
+    draw_rectangle_lines(ib.x, ib.y, ib.w, ib.h, 2.0, if ib_hot { ACCENT } else { Color::new(0.5, 0.4, 0.6, 0.9) });
+    if code_input.is_empty() {
+        draw_text("type a room code", ib.x + 12.0, ib.y + 29.0, 18.0, dim);
+    } else {
+        let caret = if (get_time() * 2.0) as i64 % 2 == 0 { "|" } else { " " };
+        draw_text(&format!("{code_input}{caret}"), ib.x + 12.0, ib.y + 29.0, 22.0, CREAM);
+    }
+    let has_code = !code_input.is_empty();
+    if button(Rect::new(cx + 94.0, py + 16.0, 176.0, 44.0), "JOIN CODE", m, click) && has_code {
+        return LobbyAction::JoinCode;
+    }
+
+    // ---- two ways to host ----
+    let by = sh - 122.0;
+    if button(Rect::new(cx - 270.0, by, 264.0, 46.0), "+  FOUND PUBLIC", m, click) {
+        return LobbyAction::Host;
+    }
+    if button(Rect::new(cx + 6.0, by, 264.0, 46.0), "+  HOST PRIVATE", m, click) {
+        return LobbyAction::HostPrivate;
+    }
+    centered(&format!("your room code: {my_code}   (share it to invite friends)"), cx, by + 70.0, 15.0, Color::new(0.85, 0.72, 0.95, 1.0));
+    action
+}
+
 /// A dark gradient backdrop with drifting embers, for the menu screens.
 pub fn backdrop() {
     draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.05, 0.06, 0.08, 1.0));
@@ -182,26 +293,50 @@ fn title(cx: f32, y: f32) {
 /// The settings panel (used by both the main menu and the in-game pause).
 /// Applies volume changes live; returns true on the frame "BACK" is clicked.
 pub fn settings_panel(s: &mut Settings, m: Vec2, click: bool, down: bool) -> bool {
-    let (pw, ph) = (480.0, 320.0);
+    let (pw, ph) = (480.0, 388.0);
     let (px, py) = ((screen_width() - pw) * 0.5, (screen_height() - ph) * 0.5);
     draw_rectangle(px, py, pw, ph, PANEL);
     draw_rectangle_lines(px, py, pw, ph, 2.0, ACCENT);
-    centered("SETTINGS", px + pw * 0.5, py + 44.0, 30.0, CREAM);
+    centered("SETTINGS", px + pw * 0.5, py + 40.0, 30.0, CREAM);
 
     let (sx, sw) = (px + 44.0, pw - 150.0);
-    let mut sy = py + 94.0;
+    let mut sy = py + 84.0;
     let before = (s.master, s.music, s.sfx);
     s.master = slider(Rect::new(sx, sy, sw, 18.0), "Master", s.master, m, down);
-    sy += 58.0;
+    sy += 52.0;
     s.music = slider(Rect::new(sx, sy, sw, 18.0), "Music", s.music, m, down);
-    sy += 58.0;
+    sy += 52.0;
     s.sfx = slider(Rect::new(sx, sy, sw, 18.0), "Effects", s.sfx, m, down);
     if (s.master, s.music, s.sfx) != before {
         s.apply_audio();
     }
+    sy += 50.0;
+
+    // faction colour picker — 8 swatches; your pick is highlighted
+    draw_text("Colour", sx, sy + 2.0, 20.0, CREAM);
+    let sw_sz = 30.0;
+    let gap = 8.0;
+    let row_w = 8.0 * sw_sz + 7.0 * gap;
+    let cx0 = px + pw - 44.0 - row_w;
+    for c in 0u8..8 {
+        let r = Rect::new(cx0 + c as f32 * (sw_sz + gap), sy - 18.0, sw_sz, sw_sz);
+        let col = crate::gfx::PLAYER_COLORS[c as usize];
+        draw_rectangle(r.x, r.y, r.w, r.h, col);
+        let sel = c == s.color;
+        let hot = r.contains(m);
+        if sel {
+            draw_rectangle_lines(r.x - 2.0, r.y - 2.0, r.w + 4.0, r.h + 4.0, 3.0, CREAM);
+        } else if hot {
+            draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, Color::new(1.0, 1.0, 1.0, 0.6));
+        }
+        if hot && click {
+            s.color = c;
+            crate::audio::sfx("radar", 0.5);
+        }
+    }
 
     let (bw, bh) = (160.0, 42.0);
-    button(Rect::new(px + (pw - bw) * 0.5, py + ph - 58.0, bw, bh), "BACK", m, click)
+    button(Rect::new(px + (pw - bw) * 0.5, py + ph - 56.0, bw, bh), "BACK", m, click)
 }
 
 #[allow(dead_code)] // Quit is native-only (no window to close in the browser)

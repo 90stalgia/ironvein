@@ -174,6 +174,11 @@ pub struct Beacon {
     pub controller: PubKey,
     /// the controller's display name (for the map)
     pub controller_name: String,
+    /// invite-only room: the beacon carries ONLY its (code-derived) region
+    /// topic, NOT the global `ironvein` topic — so it never surfaces in the
+    /// public lobby. Only a peer who knows the room code can derive the topic
+    /// and discover it. See [`room_code_region`].
+    pub private: bool,
 }
 
 impl Beacon {
@@ -194,12 +199,14 @@ impl Beacon {
         content.push_str("\",\"ctrl_name\":");
         json::write_string(&mut content, &self.controller_name);
         content.push('}');
-        // Two topics: the region's own (for a targeted join) and the global
-        // one (so the world map can find every region with one subscription).
-        let tags = vec![
-            vec!["t".to_string(), region_topic(&self.region)],
-            vec!["t".to_string(), GLOBAL_TOPIC.to_string()],
-        ];
+        // Public rooms carry two topics: the region's own (targeted join) and the
+        // global one (so the world map finds every region with one subscription).
+        // A private room omits the global topic — it's discoverable only by a peer
+        // who knows the code and subscribes to its derived region topic directly.
+        let mut tags = vec![vec!["t".to_string(), region_topic(&self.region)]];
+        if !self.private {
+            tags.push(vec!["t".to_string(), GLOBAL_TOPIC.to_string()]);
+        }
         Event::create(id, created_at, KIND_BEACON, tags, content)
     }
 
@@ -221,8 +228,48 @@ impl Beacon {
             .and_then(crate::crypto::hex_decode32)
             .unwrap_or([0u8; 32]);
         let controller_name = obj.get("ctrl_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        Some(Beacon { region, host: ev.pubkey, tick, players, genesis, controller, controller_name })
+        // a beacon without the global topic was published as invite-only
+        let private = !ev.has_tag("t", GLOBAL_TOPIC);
+        Some(Beacon { region, host: ev.pubkey, tick, players, genesis, controller, controller_name, private })
     }
+}
+
+/// Crockford base32 (32 symbols, excludes I/L/O/U) — reads cleanly aloud.
+const ROOM_ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// A short, shareable room code derived from a host's identity key — stable, so
+/// it's "your colony's code". 40 bits → eight base32 chars, grouped `XXXX-XXXX`.
+/// (Pinched from provable-poker-web's room-code rendezvous; there the code is
+/// random per table — here we anchor it to identity so the host needn't store it.)
+pub fn host_room_code(pk: &PubKey) -> String {
+    let h = crate::crypto::sha256(&[b"ironvein-roomcode-v1", pk]);
+    let mut bits: u64 = 0;
+    for &b in &h[..5] {
+        bits = (bits << 8) | b as u64;
+    }
+    let mut s = String::with_capacity(9);
+    for i in 0..8 {
+        if i == 4 {
+            s.push('-');
+        }
+        let shift = (7 - i) * 5;
+        s.push(ROOM_ALPHABET[((bits >> shift) & 0x1f) as usize] as char);
+    }
+    s
+}
+
+/// Map a (typed or generated) room code to its private region id — the
+/// cryptographic meeting place. Both host and joiner derive the same topic from
+/// the same code without ever putting the code on the wire. Punctuation/spacing
+/// and case are ignored so "m7k3-9pxr" and "M7K39PXR" land in the same room.
+pub fn room_code_region(code: &str) -> String {
+    let norm: String = code.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect();
+    let h = crate::crypto::sha256(&[b"ironvein-room-v1", norm.as_bytes()]);
+    let mut s = String::from("RM");
+    for b in &h[..5] {
+        s.push_str(&format!("{b:02X}"));
+    }
+    s
 }
 
 // ----------------------------------------------------------------------
@@ -538,12 +585,48 @@ mod tests {
     #[test]
     fn beacon_roundtrip() {
         let id = Identity::generate();
-        let b = Beacon { region: "B2".into(), host: id.pk, tick: 4242, players: 3, genesis: 0xDEADBEEFCAFE, controller: id.pk, controller_name: "Ada".into() };
+        let b = Beacon { region: "B2".into(), host: id.pk, tick: 4242, players: 3, genesis: 0xDEADBEEFCAFE, controller: id.pk, controller_name: "Ada".into(), private: false };
         let ev = b.to_event(&id, 1_700_000_001);
         assert!(ev.verify());
         assert_eq!(ev.tag("t"), Some("ironvein-region-B2"));
         let back = Beacon::from_event(&ev).unwrap();
         assert_eq!(back, b);
+    }
+
+    #[test]
+    fn room_code_rendezvous() {
+        let id = Identity::generate();
+        // a host's code is stable (derived from identity) and well-formed
+        let code = host_room_code(&id.pk);
+        assert_eq!(code.len(), 9); // XXXX-XXXX
+        assert_eq!(&code[4..5], "-");
+        assert_eq!(host_room_code(&id.pk), code, "code must be stable");
+
+        // host and joiner derive the same private region from the same code,
+        // regardless of how the joiner typed it (case / spacing / punctuation)
+        let region = room_code_region(&code);
+        let messy = format!("  {}  ", code.to_lowercase().replace('-', " "));
+        assert_eq!(room_code_region(&messy), region);
+        // a different code lands in a different room
+        assert_ne!(room_code_region("AAAA-AAAA"), region);
+
+        // a private beacon carries ONLY its region topic — never the global one,
+        // so it can't be vacuumed up by the public lobby scan.
+        let pb = Beacon {
+            region: region.clone(),
+            host: id.pk,
+            tick: 1,
+            players: 1,
+            genesis: 0,
+            controller: id.pk,
+            controller_name: "Ada".into(),
+            private: true,
+        };
+        let ev = pb.to_event(&id, 1_700_000_003);
+        assert!(ev.verify());
+        assert!(ev.has_tag("t", &region_topic(&region)));
+        assert!(!ev.has_tag("t", GLOBAL_TOPIC), "private beacon must omit the global topic");
+        assert!(Beacon::from_event(&ev).unwrap().private, "private flag must survive the round-trip");
     }
 
     #[test]

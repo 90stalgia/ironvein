@@ -9,6 +9,8 @@
 mod audio;
 mod gfx;
 mod menu;
+mod music;
+mod synth;
 mod ui;
 
 /// A fading click marker (move/attack/harvest order, or a rally point). Stored
@@ -78,6 +80,24 @@ fn url_param(key: &str) -> Option<String> {
     core::str::from_utf8(&buf[..n as usize]).ok().map(str::to_string)
 }
 
+/// A fresh, well-spread map seed from the wall clock — so each new game lands on
+/// a different planet. Chosen ONCE in `main`, outside the sim (the sim itself
+/// stays float/clock-free); it's then baked into the world and shared to joiners.
+fn fresh_seed() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    let raw = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0xC0FFEE_D00D);
+    #[cfg(target_arch = "wasm32")]
+    let raw = (macroquad::miniquad::date::now() * 1_000_000.0) as u64;
+    // splitmix64 scramble: a near-sequential clock still yields a spread-out seed
+    let mut z = raw.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 /// Derive a map seed from a region name — same name yields the same world on
 /// every peer (so a sector is genuinely a shared place), different names give
 /// different terrain. FNV-1a, matching the sim's hashing style.
@@ -98,12 +118,18 @@ fn notify_desktop(title: &str, body: &str) {
 struct Args {
     name: String,
     color: u8,
+    /// true if color was given explicitly (--color / ?color); else the Settings
+    /// colour pick is used.
+    color_set: bool,
     host: Option<u16>,
     join: Option<String>,
     listen: u16,
     bots: usize,
     skirmish: bool,
     seed: u64,
+    /// true if the seed was pinned explicitly (--seed / ?seed / a named region);
+    /// otherwise a fresh game rolls a new map each run.
+    seed_set: bool,
     load: Option<String>,
     save_dir: String,
     demo: bool,
@@ -116,12 +142,14 @@ fn parse_args() -> Args {
     let mut a = Args {
         name: std::env::var("USER").unwrap_or_else(|_| "settler".into()),
         color: 0,
+        color_set: false,
         host: None,
         join: None,
         listen: 0,
         bots: 1,
         skirmish: false,
         seed: mapgen::POC_SEED,
+        seed_set: false,
         load: None,
         save_dir: "saves".into(),
         demo: false,
@@ -132,16 +160,48 @@ fn parse_args() -> Args {
     while i < argv.len() {
         match argv[i].as_str() {
             "--name" => { a.name = argv[i + 1].clone(); i += 1; }
-            "--color" => { a.color = argv[i + 1].parse().unwrap_or(0); i += 1; }
+            "--color" => { a.color = argv[i + 1].parse().unwrap_or(0); a.color_set = true; i += 1; }
             "--host" => { a.host = Some(argv[i + 1].parse().expect("--host PORT")); i += 1; }
             "--join" => { a.join = Some(argv[i + 1].clone()); i += 1; }
             "--listen" => { a.listen = argv[i + 1].parse().unwrap_or(0); i += 1; }
             "--bots" => { a.bots = argv[i + 1].parse().unwrap_or(1); i += 1; }
             "--map" => { a.skirmish = argv[i + 1] == "skirmish"; i += 1; }
-            "--seed" => { a.seed = argv[i + 1].parse().unwrap_or(a.seed); i += 1; }
+            "--seed" => { a.seed = argv[i + 1].parse().unwrap_or(a.seed); a.seed_set = true; i += 1; }
             "--load" => { a.load = Some(argv[i + 1].clone()); i += 1; }
             "--save-dir" => { a.save_dir = argv[i + 1].clone(); i += 1; }
             "--demo" => { a.demo = true; }
+            #[cfg(not(target_arch = "wasm32"))]
+            "--render-music" => {
+                let path = argv.get(i + 1).cloned().unwrap_or_else(|| "ironvein_music.wav".into());
+                match music::render_wav(&path) {
+                    Ok(()) => println!("rendered procedural soundtrack loop -> {path}"),
+                    Err(e) => eprintln!("render-music failed: {e}"),
+                }
+                std::process::exit(0);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            "--render-stems" => {
+                let dir = argv.get(i + 1).cloned().unwrap_or_else(|| "stems_rust".into());
+                match music::render_stems_to_dir(&dir) {
+                    Ok(paths) => {
+                        println!("rendered {} stems to {dir}/ (22050 Hz, 20s loop):", paths.len());
+                        for p in paths {
+                            println!("  {p}");
+                        }
+                    }
+                    Err(e) => eprintln!("render-stems failed: {e}"),
+                }
+                std::process::exit(0);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            "--render-title" => {
+                let path = argv.get(i + 1).cloned().unwrap_or_else(|| "ironvein_title.wav".into());
+                match music::render_title_wav(&path) {
+                    Ok(()) => println!("rendered title-screen theme -> {path}"),
+                    Err(e) => eprintln!("render-title failed: {e}"),
+                }
+                std::process::exit(0);
+            }
             "--help" | "-h" => {
                 println!("ironvein [--name N] [--color 0-7] [--bots N] [--map valley|skirmish] [--seed N]");
                 println!("         [--host PORT] [--join IP:PORT] [--listen PORT] [--load FILE] [--save-dir DIR]");
@@ -167,14 +227,16 @@ fn parse_args() -> Args {
         }
         if let Some(c) = url_param("color").and_then(|s| s.parse::<u8>().ok()) {
             a.color = c % 8;
+            a.color_set = true;
         }
         if let Some(b) = url_param("bots").and_then(|s| s.parse::<usize>().ok()) {
             a.bots = b.min(6);
         }
         // explicit ?seed wins; otherwise a named region picks its own terrain.
+        // Either way the browser world is pinned (a sector is a stable world).
         match url_param("seed").and_then(|s| s.parse::<u64>().ok()) {
-            Some(s) => a.seed = s,
-            None if region_param.is_some() => a.seed = region_seed(&a.region),
+            Some(s) => { a.seed = s; a.seed_set = true; }
+            None if region_param.is_some() => { a.seed = region_seed(&a.region); a.seed_set = true; }
             None => {}
         }
     }
@@ -254,6 +316,10 @@ struct App {
     settings: menu::Settings,
     overlay: menu::Overlay,
     markers: Vec<CmdMarker>,
+    /// camera trauma 0..1 → screen shake; decays each frame. Pure presentation.
+    shake: f32,
+    /// full-screen white-out 0..1 from a near nuke detonation; decays each frame.
+    flash: f32,
 }
 
 impl App {
@@ -386,6 +452,18 @@ impl App {
                     VisEvent::Pickup { .. } => audio::sfx("harvest", g * 0.55),
                     VisEvent::Nuke { .. } => audio::sfx("explosion", (g * 2.0).min(1.0)),
                 }
+            }
+            // camera trauma: weighted by how close the blast is to the viewport, so
+            // a far-off skirmish is a faint tremor and a nuke next door rattles hard.
+            match &ev {
+                VisEvent::Nuke { .. } => {
+                    self.shake = (self.shake + 0.9 * g).min(1.0);
+                    self.flash = (self.flash + g).min(1.0);
+                }
+                VisEvent::Die { big: true, .. } => self.shake = (self.shake + 0.30 * g).min(1.0),
+                VisEvent::Die { big: false, .. } => self.shake = (self.shake + 0.10 * g).min(0.6),
+                VisEvent::Shot { rocket: true, .. } => self.shake = (self.shake + 0.06 * g).min(0.5),
+                _ => {}
             }
             self.fx.push(gfx::Effect { ev, age: 0.0 });
         }
@@ -569,6 +647,54 @@ impl App {
         self.prev_defeated = defeated;
     }
 
+    /// How dangerous the moment feels (0 calm .. 1 frantic), for the adaptive
+    /// soundtrack. Presentation only — reads the world, never mutates the sim.
+    fn music_intensity(&self) -> f32 {
+        let w = &self.session.world;
+        let me = self.my_pid();
+        let mut x: f32 = 0.0;
+        if ironvein_sim::world::is_night(w.tick) {
+            x += 0.22;
+        }
+        if ironvein_sim::world::is_blood_moon(w.tick) {
+            x += 0.13;
+        }
+        if self.atk_cd > 0.0 {
+            x += 0.28; // base recently took fire
+        }
+        if w.ents.iter().any(|e| e.kind.is_boss() && e.hp > 0) {
+            x += 0.45; // a boss on the field cranks the dread
+        }
+        if let Some(p) = w.players.get(me as usize) {
+            if p.starving {
+                x += 0.06;
+            }
+            if p.low_power() {
+                x += 0.04;
+            }
+        }
+        // monsters massing near my territory
+        let (mut sx, mut sy, mut n) = (0i64, 0i64, 0i64);
+        for e in w.ents.iter() {
+            if e.owner == me && e.kind.is_building() {
+                let t = e.tile();
+                sx += t.x as i64;
+                sy += t.y as i64;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            let (cx, cy) = ((sx / n) as i32, (sy / n) as i32);
+            let near = w
+                .ents
+                .iter()
+                .filter(|e| e.kind.is_monster() && e.hp > 0 && (e.tile().x - cx).abs() <= 34 && (e.tile().y - cy).abs() <= 34)
+                .count();
+            x += (near as f32 / 8.0).min(1.0) * 0.30;
+        }
+        x.clamp(0.0, 1.0)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn save_now(&self, announce: bool) {
         let bytes = self.session.world.save_bytes();
@@ -644,14 +770,38 @@ fn window_conf() -> Conf {
     }
 }
 
-/// Browser startup rendezvous: if someone is already hosting `region`, join
-/// them; otherwise become the host. This is what makes two players who each
-/// open `?region=B2` simply land in the *same* B2 instead of founding two
-/// rival copies. Renders a "scanning…" splash while it listens for a beacon.
+/// Dial `host` over WebRTC and pump the handshake (~15s) until it yields a live
+/// session, the host refuses, or we give up. Returns None to bounce back to the
+/// lobby. Shared by the public list and the private room-code path.
+#[cfg(target_arch = "wasm32")]
+async fn try_join(
+    matchmaker: &mut ironvein_net::browser::Matchmaker,
+    host: &[u8; 32],
+    identity: &ironvein_net::Identity,
+    name: &str,
+    color: u8,
+) -> Option<Session> {
+    let mut joiner = ironvein_net::browser::join(host, identity.clone(), name, color)?;
+    let deadline = get_time() + 15.0;
+    while get_time() < deadline {
+        matchmaker.pump();
+        match joiner.poll() {
+            Some(Ok(session)) => return Some(session),
+            Some(Err(_)) => return None, // refused (full / declined)
+            None => {}
+        }
+        splash("Joining colony..");
+        next_frame().await;
+    }
+    None
+}
+
+/// Browser startup rendezvous: browse public colonies, join one, found a new
+/// (public or invite-only) colony, or enter a friend's room code to find their
+/// private world. Renders the lobby each frame while it listens for beacons.
 #[cfg(target_arch = "wasm32")]
 async fn discover_and_connect(
     matchmaker: &mut ironvein_net::browser::Matchmaker,
-    region: &str,
     world: World,
     identity: ironvein_net::Identity,
     name: &str,
@@ -659,47 +809,103 @@ async fn discover_and_connect(
     bots: &[String],
 ) -> Session {
     let my_key = matchmaker.my_key();
+    let my_code = matchmaker.room_code(); // our own shareable invite code
+    let mut world = Some(world); // moved out only when we choose to host
+    let mut code_input = String::new();
+    // when set, we're waiting for an invite-only host's beacon: (derived region, give-up time)
+    let mut pending: Option<(String, f64)> = None;
 
-    // Phase 1: listen for an existing host already beaconing this region. Bail
-    // out the instant one appears; otherwise give up after ~6s and host.
-    let search_until = get_time() + 6.0;
-    let mut host_key: Option<ironvein_net::PubKey> = None;
-    while get_time() < search_until {
+    // Interactive lobby: browse public colonies, JOIN one, FOUND a new (public or
+    // invite-only) one, or enter a friend's room code to find their private world.
+    loop {
         matchmaker.pump();
-        if let Some(b) = matchmaker
-            .regions()
-            .into_iter()
-            .find(|b| b.region == region && b.host != my_key && b.host != [0u8; 32])
-        {
-            host_key = Some(b.host);
-            break;
-        }
-        splash(&format!("Scanning sector {region} for a live host..."));
-        next_frame().await;
-    }
 
-    // Phase 2: found one — join it, driving the WebRTC handshake to completion.
-    if let Some(hk) = host_key {
-        if let Some(mut joiner) = ironvein_net::browser::join(&hk, identity.clone(), name, color) {
-            let join_until = get_time() + 15.0;
-            while get_time() < join_until {
-                matchmaker.pump();
-                if let Some(result) = joiner.poll() {
-                    match result {
-                        Ok(session) => return session,
-                        Err(_) => break, // refused (world full, etc.) — host instead
-                    }
-                }
-                splash(&format!("Joining sector {region}..."));
-                next_frame().await;
+        // room-code text entry
+        while let Some(ch) = get_char_pressed() {
+            if ch.is_ascii_alphanumeric() && code_input.len() < 8 {
+                code_input.push(ch.to_ascii_uppercase());
             }
         }
-    }
+        if is_key_pressed(KeyCode::Backspace) {
+            code_input.pop();
+        }
+        if is_key_pressed(KeyCode::Escape) {
+            pending = None;
+        }
 
-    // Phase 3: nobody home (or the join failed) — host this region ourselves.
-    splash(&format!("Founding sector {region}..."));
-    next_frame().await;
-    ironvein_net::browser::host(world, identity, name, color, bots)
+        // waiting on a private host: watch for the beacon under its derived region
+        if let Some((region, deadline)) = pending.clone() {
+            if get_time() > deadline {
+                pending = None;
+            } else if let Some(b) =
+                matchmaker.regions().into_iter().find(|b| b.region == region && b.host != my_key && b.host != [0u8; 32])
+            {
+                if let Some(session) = try_join(matchmaker, &b.host, &identity, name, color).await {
+                    return session;
+                }
+                pending = None; // refused / timed out → back to the lobby
+            } else {
+                splash("Looking for private colony.. (Esc to cancel)");
+                next_frame().await;
+                continue;
+            }
+        }
+
+        // public colony list: not us, not invite-only, not the zero placeholder
+        let mut seen = std::collections::HashSet::new();
+        let beacons: Vec<_> = matchmaker
+            .regions()
+            .into_iter()
+            .filter(|b| !b.private && b.host != my_key && b.host != [0u8; 32])
+            .filter(|b| seen.insert(b.host))
+            .collect();
+        let rows: Vec<menu::LobbyRow> = beacons
+            .iter()
+            .map(|b| {
+                let who = if b.controller_name.is_empty() { "a colony".to_string() } else { b.controller_name.clone() };
+                menu::LobbyRow {
+                    title: format!("{who}  ·  Sector {}", b.region),
+                    sub: format!("{} player{}  ·  day {}", b.players, if b.players == 1 { "" } else { "s" }, b.tick / 6000 + 1),
+                }
+            })
+            .collect();
+
+        let m = vec2(mouse_position().0, mouse_position().1);
+        let click = is_mouse_button_pressed(MouseButton::Left);
+        match menu::lobby_screen(name, color, &rows, &my_code, &code_input, m, click) {
+            menu::LobbyAction::Join(i) => {
+                if let Some(session) = try_join(matchmaker, &beacons[i].host, &identity, name, color).await {
+                    return session;
+                }
+            }
+            menu::LobbyAction::JoinCode => {
+                // the code is the meeting place: derive its private topic, start
+                // listening, and wait for that host's beacon to arrive.
+                let region = ironvein_net::nostr::room_code_region(&code_input);
+                matchmaker.watch_code(&code_input);
+                pending = Some((region, get_time() + 25.0));
+            }
+            menu::LobbyAction::Host => {
+                splash("Founding your colony..");
+                next_frame().await;
+                return ironvein_net::browser::host(world.take().unwrap(), identity, name, color, bots);
+            }
+            menu::LobbyAction::HostPrivate => {
+                // beacon only on the code-derived topic; dwell on the splash so the
+                // host can read/share the code before the world spins up.
+                matchmaker.go_private();
+                let until = get_time() + 4.0;
+                while get_time() < until {
+                    matchmaker.pump();
+                    splash(&format!("PRIVATE COLONY  -  share code  {my_code}"));
+                    next_frame().await;
+                }
+                return ironvein_net::browser::host(world.take().unwrap(), identity, name, color, bots);
+            }
+            menu::LobbyAction::None => {}
+        }
+        next_frame().await;
+    }
 }
 
 /// A centered loading message on the dark backdrop (browser rendezvous splash).
@@ -736,6 +942,24 @@ async fn main() {
     settings.apply_audio();
     audio::start_ambience();
 
+    // The music engine (the ported synth3.py) takes ~2s to render its loop, so
+    // show a frame first — neither native nor web should stare at a black screen
+    // while it synthesises — then build the soundtrack.
+    {
+        clear_background(Color::new(0.05, 0.06, 0.07, 1.0));
+        let t = "IRONVEIN";
+        let td = measure_text(t, None, 52, 1.0);
+        draw_text(t, screen_width() / 2.0 - td.width / 2.0, screen_height() / 2.0 - 40.0, 52.0, Color::new(0.85, 0.42, 0.22, 1.0));
+        let m = "composing the soundtrack..";
+        let md = measure_text(m, None, 24, 1.0);
+        draw_text(m, screen_width() / 2.0 - md.width / 2.0, screen_height() / 2.0 + 14.0, 24.0, Color::new(0.78, 0.72, 0.55, 1.0));
+        next_frame().await;
+    }
+    audio::prepare_music();
+    // ...then a softer, bedded title theme for the menu (the gameplay stems stay
+    // silent on the menu — they only ride up with battle intensity in-game).
+    audio::prepare_title();
+
     // Per-mode save slots so Survival/Skirmish runs each resume independently.
     let save_dir = std::path::PathBuf::from(&args.save_dir);
     let surv_path = save_dir.join("survival.iv");
@@ -757,6 +981,9 @@ async fn main() {
         }
         settings.apply_audio();
     }
+    // Leaving the title screen: stop the menu theme so the in-game soundtrack (the
+    // adaptive stems, ridden by battle intensity) takes over cleanly.
+    audio::stop_title();
 
     // Skirmish bot count rises with difficulty; survival has no rivals.
     let bots_for = |d: u8| -> usize { match d { 0 => 1, 2 => 3, _ => 2 } };
@@ -789,7 +1016,12 @@ async fn main() {
         let bytes = std::fs::read(p).expect("read save file");
         World::load_bytes(&bytes).expect("parse save file")
     } else {
-        let mut w = mapgen::verdant_divide(args.seed, mode);
+        // fresh game: roll a new map each run unless the seed was pinned
+        // (--seed, ?seed, or a named region). The seed is baked into the world
+        // at creation, saved, and shared to joiners via the snapshot, so this
+        // stays deterministic for the session.
+        let seed = if args.seed_set { args.seed } else { fresh_seed() };
+        let mut w = mapgen::verdant_divide(seed, mode);
         w.difficulty = difficulty;
         w
     };
@@ -811,6 +1043,11 @@ async fn main() {
         .map(|i| format!("Bot {}", ["Gravel", "Sable", "Rust", "Moss", "Flint", "Ash"][i % 6]))
         .collect();
 
+    // Your faction colour: an explicit --color/?color wins; otherwise the colour
+    // you picked in Settings. (The sim still bumps it if it clashes with someone
+    // already in the region — see cmd_join.)
+    let color = if args.color_set { args.color } else { settings.color };
+
     // one keypair per callsign, persisted: your base can only be reclaimed
     // by this key, on any host, forever. (On wasm the browser localStorage is
     // owned by the JS shim; here we mint a fresh in-memory key per session.)
@@ -829,11 +1066,11 @@ async fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     let session = if let Some(addr) = &args.join {
         println!("dialing {addr} …");
-        Session::join(addr, identity, args.listen, &args.name, args.color).expect("join failed")
+        Session::join(addr, identity, args.listen, &args.name, color).expect("join failed")
     } else if let Some(port) = args.host {
-        Session::host(world, identity, port, &args.name, args.color, &bot_roster).expect("bind failed")
+        Session::host(world, identity, port, &args.name, color, &bot_roster).expect("bind failed")
     } else {
-        Session::solo(world, identity, &args.name, args.color, &bot_roster)
+        Session::solo(world, identity, &args.name, color, &bot_roster)
     };
 
     // Browser: host a region over WebRTC and advertise it on Nostr relays.
@@ -858,8 +1095,7 @@ async fn main() {
         &args.region,
     );
     #[cfg(target_arch = "wasm32")]
-    let session =
-        discover_and_connect(&mut matchmaker, &args.region, world, identity, &args.name, args.color, &bot_roster).await;
+    let session = discover_and_connect(&mut matchmaker, world, identity, &args.name, color, &bot_roster).await;
 
     let my_key = session.my_key();
     let app_identity = identity_for_app;
@@ -939,12 +1175,14 @@ async fn main() {
         my_region: args.region.clone(),
         identity: app_identity,
         my_name: args.name.clone(),
-        my_color: args.color,
+        my_color: color,
         travel: None,
         traveling_to: None,
         settings,
         overlay: menu::Overlay::None,
         markers: Vec::new(),
+        shake: 0.0,
+        flash: 0.0,
     };
     app.last_saved = app.session.world.tick;
 
@@ -953,6 +1191,12 @@ async fn main() {
 
         // keep native looping music/ambience topped up (no-op in the browser)
         audio::update();
+        // browser: once the stems finish downloading, upgrade master → adaptive
+        audio::poll_adaptive();
+        // ride the adaptive soundtrack on how dangerous things feel right now
+        if audio::adaptive_music() {
+            audio::set_music_intensity(app.music_intensity());
+        }
 
         // age out the "while you were away" report (any key or ~20s dismisses)
         if app.away_report.is_some() {
@@ -1145,6 +1389,9 @@ async fn main() {
             mk.age += dt as f32;
         }
         app.markers.retain(|mk| mk.age < 0.6);
+        // screen shake / flash decay (frame-rate independent)
+        app.shake = (app.shake - dt as f32 * 1.7).max(0.0);
+        app.flash = (app.flash - dt as f32 * 2.4).max(0.0);
 
         draw(&mut app);
 
@@ -1619,6 +1866,16 @@ fn draw(app: &mut App) {
     set_camera(&scam);
     clear_background(Color::new(0.04, 0.04, 0.05, 1.0));
 
+    // screen shake: jitter the world camera for this render only (restored before
+    // the HUD). Trauma is squared so small tremors barely move, big ones slam.
+    let true_cam = app.cam;
+    if app.shake > 0.0 {
+        let trauma = app.shake * app.shake;
+        let ti = get_time() as f32;
+        let amp = trauma * 13.0;
+        app.cam += vec2((ti * 46.3).sin() * amp, (ti * 39.7 + 1.7).sin() * amp);
+    }
+
     let w = &app.session.world;
     let tick = w.tick;
 
@@ -1712,6 +1969,12 @@ fn draw(app: &mut App) {
         WHITE,
         DrawTextureParams { dest_size: Some(vec2(sw, sh)), flip_y: true, ..Default::default() },
     );
+    app.cam = true_cam; // restore the true camera so HUD overlays don't shake
+
+    // nuke detonation white-out, fading fast over the whole viewport
+    if app.flash > 0.0 {
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(1.0, 0.97, 0.9, (app.flash * 0.55).min(0.7)));
+    }
 
     // ---- UI overlays, drawn crisp at native resolution ----
     let w = &app.session.world;

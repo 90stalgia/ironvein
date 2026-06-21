@@ -162,19 +162,21 @@ fn vnoise(fx: f32, fy: f32, salt: u32) -> f32 {
 
 fn terrain_tint(w: &World, t: Tp) -> Color {
     let v = vnoise(t.x as f32 * 0.28, t.y as f32 * 0.28, 1) - 0.5;
+    // B Proxima palette: alien, not Earth. Vegetation runs teal/cyan, soil is a
+    // rusty violet, the seas are pale methane-teal, and the rock is purple-grey.
     match w.map.terrain_at(t) {
-        Terrain::Grass => mix(rgb(0.18, 0.42, 0.16), rgb(0.11, 0.31, 0.12), 0.5 + v),
-        Terrain::Dirt => mix(rgb(0.48, 0.38, 0.22), rgb(0.37, 0.29, 0.17), 0.5 + v),
-        Terrain::Road => mix(rgb(0.41, 0.39, 0.35), rgb(0.33, 0.31, 0.28), 0.5 + v),
-        Terrain::Water => rgb(0.08, 0.22, 0.42),
-        Terrain::Bridge => rgb(0.46, 0.32, 0.17),
-        Terrain::Rock => mix(rgb(0.48, 0.48, 0.52), rgb(0.35, 0.35, 0.39), 0.5 + v),
-        Terrain::Tree => mix(rgb(0.16, 0.36, 0.15), rgb(0.11, 0.27, 0.11), 0.5 + v),
-        Terrain::Sand => mix(rgb(0.80, 0.72, 0.46), rgb(0.69, 0.61, 0.37), 0.5 + v),
-        Terrain::Snow => mix(rgb(0.87, 0.90, 0.95), rgb(0.75, 0.81, 0.89), 0.5 + v),
-        Terrain::Ice => mix(rgb(0.66, 0.82, 0.90), rgb(0.55, 0.74, 0.86), 0.5 + v),
-        Terrain::Marsh => mix(rgb(0.30, 0.35, 0.22), rgb(0.21, 0.26, 0.15), 0.5 + v),
-        Terrain::Mountain => mix(rgb(0.42, 0.42, 0.47), rgb(0.28, 0.28, 0.33), 0.5 + v),
+        Terrain::Grass => mix(rgb(0.16, 0.44, 0.36), rgb(0.09, 0.30, 0.28), 0.5 + v),
+        Terrain::Dirt => mix(rgb(0.52, 0.33, 0.30), rgb(0.39, 0.24, 0.24), 0.5 + v),
+        Terrain::Road => mix(rgb(0.40, 0.37, 0.40), rgb(0.31, 0.29, 0.33), 0.5 + v),
+        Terrain::Water => rgb(0.05, 0.30, 0.40),
+        Terrain::Bridge => rgb(0.44, 0.30, 0.28),
+        Terrain::Rock => mix(rgb(0.46, 0.42, 0.54), rgb(0.32, 0.29, 0.41), 0.5 + v),
+        Terrain::Tree => mix(rgb(0.12, 0.40, 0.36), rgb(0.07, 0.27, 0.27), 0.5 + v),
+        Terrain::Sand => mix(rgb(0.76, 0.60, 0.58), rgb(0.64, 0.49, 0.49), 0.5 + v),
+        Terrain::Snow => mix(rgb(0.88, 0.88, 0.97), rgb(0.76, 0.79, 0.92), 0.5 + v),
+        Terrain::Ice => mix(rgb(0.62, 0.82, 0.92), rgb(0.52, 0.74, 0.90), 0.5 + v),
+        Terrain::Marsh => mix(rgb(0.24, 0.36, 0.30), rgb(0.15, 0.26, 0.22), 0.5 + v),
+        Terrain::Mountain => mix(rgb(0.40, 0.37, 0.50), rgb(0.25, 0.24, 0.36), 0.5 + v),
     }
 }
 
@@ -363,14 +365,15 @@ fn ground_texture(c: Vec2, t: Tp, base: Color, terr: Terrain) {
     if matches!(terr, Terrain::Grass) && tile_noise(t.x, t.y, 9) % 4 == 0 {
         let bx = c.x + ((tile_noise(t.x, t.y, 11) % 14) as f32 - 7.0);
         let by = c.y + ((tile_noise(t.x, t.y, 12) % 8) as f32 - 4.0);
-        draw_line(bx, by + 3.0, bx - 1.5, by - 2.0, 1.0, rgb(0.10, 0.28, 0.11));
-        draw_line(bx + 1.0, by + 3.0, bx + 1.5, by - 3.0, 1.0, rgb(0.24, 0.50, 0.18));
-        draw_line(bx + 2.5, by + 3.0, bx + 3.5, by - 1.0, 1.0, rgb(0.24, 0.50, 0.18));
+        draw_line(bx, by + 3.0, bx - 1.5, by - 2.0, 1.0, rgb(0.08, 0.30, 0.26));
+        draw_line(bx + 1.0, by + 3.0, bx + 1.5, by - 3.0, 1.0, rgb(0.20, 0.54, 0.42));
+        draw_line(bx + 2.5, by + 3.0, bx + 3.5, by - 1.0, 1.0, rgb(0.20, 0.54, 0.42));
     }
     if matches!(terr, Terrain::Grass) && tile_noise(t.x, t.y, 21) % 26 == 0 {
-        let petal = [rgb(0.95, 0.9, 0.4), rgb(0.9, 0.5, 0.7), rgb(0.85, 0.85, 0.95)][(tile_noise(t.x, t.y, 24) % 3) as usize];
+        // glowing alien spore-pods instead of Earth flowers
+        let petal = [rgb(0.55, 0.95, 0.85), rgb(0.75, 0.55, 0.95), rgb(0.5, 0.8, 1.0)][(tile_noise(t.x, t.y, 24) % 3) as usize];
         draw_circle(c.x, c.y, 1.6, petal);
-        draw_circle(c.x, c.y, 0.7, rgb(0.95, 0.8, 0.2));
+        draw_circle(c.x, c.y, 0.7, rgb(0.92, 1.0, 0.9));
     }
 }
 
@@ -452,14 +455,14 @@ fn draw_tree(c: Vec2, t: Tp, ground: Color) {
     // cast shadow on the ground, then trunk + a lit spherical canopy rising up
     draw_circle(bx + 6.0, c.y + 3.0, 7.0, Color::new(0.0, 0.0, 0.0, 0.16));
     let trunk_top = c.y - 10.0;
-    draw_rectangle(bx - 2.0, trunk_top, 4.0, 14.0, rgb(0.30, 0.19, 0.09));
-    draw_rectangle(bx - 2.0, trunk_top, 1.6, 14.0, rgb(0.40, 0.27, 0.14));
+    draw_rectangle(bx - 2.0, trunk_top, 4.0, 14.0, rgb(0.32, 0.22, 0.26)); // dusky alien bark
+    draw_rectangle(bx - 2.0, trunk_top, 1.6, 14.0, rgb(0.44, 0.32, 0.36));
     let cy = trunk_top - 8.0;
     let r = 11.0 + (tile_noise(t.x, t.y, 4) % 3) as f32;
-    draw_circle(bx, cy, r, rgb(0.06, 0.22, 0.08));
-    draw_circle(bx - r * 0.2, cy - r * 0.2, r * 0.8, rgb(0.10, 0.30, 0.12));
-    draw_circle(bx - r * 0.35, cy - r * 0.35, r * 0.5, rgb(0.17, 0.42, 0.18));
-    draw_circle(bx - r * 0.45, cy - r * 0.45, r * 0.22, rgb(0.26, 0.52, 0.24));
+    draw_circle(bx, cy, r, rgb(0.05, 0.24, 0.22)); // teal alien canopy
+    draw_circle(bx - r * 0.2, cy - r * 0.2, r * 0.8, rgb(0.08, 0.34, 0.30));
+    draw_circle(bx - r * 0.35, cy - r * 0.35, r * 0.5, rgb(0.15, 0.48, 0.40));
+    draw_circle(bx - r * 0.45, cy - r * 0.45, r * 0.22, rgb(0.30, 0.62, 0.52));
     draw_circle(bx + r * 0.5, cy + r * 0.25, r * 0.4, rgb(0.08, 0.26, 0.10));
 }
 
@@ -1806,13 +1809,24 @@ pub fn draw_effect(fx: &Effect, cam: Vec2) {
             draw_circle(c.x, cap_y, cap_r, Color::new(0.30, 0.20, 0.16, (1.0 - t) * 0.85));
             draw_circle(c.x, cap_y, cap_r * 0.7, Color::new(1.0, 0.45 * (1.0 - t), 0.10, (1.0 - t) * 0.9));
             draw_circle(c.x, cap_y, cap_r * 0.38, Color::new(1.0, 0.92, 0.55, (1.0 - t).powf(0.6)));
+            // charred ground scorch, lingering under the smoke
+            draw_circle(c.x, c.y, rpx * 0.85, Color::new(0.06, 0.05, 0.05, (1.0 - t) * 0.5));
             // flung debris embers
-            for i in 0..14 {
-                let ang = i as f32 / 14.0 * std::f32::consts::TAU + at.x as f32;
-                let dd = (10.0 + t * 60.0) * (0.6 + 0.4 * (i as f32 * 1.3).sin());
+            for i in 0..18 {
+                let ang = i as f32 / 18.0 * std::f32::consts::TAU + at.x as f32;
+                let dd = (10.0 + t * 66.0) * (0.6 + 0.4 * (i as f32 * 1.3).sin());
                 let ex = c.x + ang.cos() * dd;
-                let ey = c.y - rise * 0.4 + ang.sin() * dd * 0.6 + t * t * 30.0;
-                draw_circle(ex, ey, 2.2 * (1.0 - t), Color::new(1.0, 0.6, 0.2, 1.0 - t));
+                let ey = c.y - rise * 0.4 + ang.sin() * dd * 0.6 + t * t * 34.0;
+                let ec = mix(rgb(1.0, 0.75, 0.3), rgb(0.4, 0.2, 0.15), t);
+                draw_circle(ex, ey, 2.3 * (1.0 - t), Color::new(ec.r, ec.g, ec.b, 1.0 - t));
+            }
+            // drifting smoke puffs billowing off the cap as it rises and dissipates
+            for i in 0..7 {
+                let ph = i as f32 * 1.7 + at.x as f32;
+                let pr = (7.0 + t * 20.0) * (0.7 + 0.3 * (ph).cos());
+                let px = c.x + ph.sin() * (6.0 + i as f32 * 4.0) * (0.4 + t);
+                let py = cap_y - t * (18.0 + i as f32 * 7.0);
+                draw_circle(px, py, pr, Color::new(0.20, 0.17, 0.16, (1.0 - t) * 0.38));
             }
         }
     }
@@ -1900,16 +1914,17 @@ pub fn draw_daylight(view: Vec2, tick: u32) {
     let s = (phase * std::f32::consts::TAU).sin();
     let night = s.max(0.0) * 0.30;
     let dusk = (1.0 - s.abs()).clamp(0.0, 1.0) * 0.12;
-    draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.55, 0.40, 0.18, 0.05));
+    // B Proxima's star is cooler/violet — a faint amethyst wash by day, magenta
+    // dusk, deep violet night (a blood moon still drowns it all in red).
+    draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.40, 0.16, 0.46, 0.06));
     if dusk > 0.005 {
-        draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.55, 0.28, 0.10, dusk));
+        draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.52, 0.18, 0.36, dusk));
     }
     if night > 0.01 {
-        // a blood moon bathes the dark in red, otherwise it's deep blue
         if ironvein_sim::world::is_blood_moon(tick) {
             draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.45, 0.04, 0.04, night * 2.4));
         } else {
-            draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.03, 0.05, 0.14, night));
+            draw_rectangle(0.0, 0.0, view.x, view.y, Color::new(0.06, 0.04, 0.18, night));
         }
     }
     let steps = 5;

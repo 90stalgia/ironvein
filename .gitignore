@@ -12,6 +12,13 @@
 # locally if present. (The small sfx_*.wav files ARE tracked — the browser
 # needs them.)
 /background_track.wav
+/MASTER_MIX.wav
+
+# Adaptive-music stems. The raw .wav exports are huge (native-only); never commit
+# them. The .ogg stems CAN be committed so GitHub Pages serves them — the browser
+# fetches them and upgrades to the layered soundtrack once decoded. (Mind the
+# total download size; compress the oggs if the set is heavy.)
+/stem_*.wav
 
 # Vendored macroquad bundle backup
 js/*.bak.js

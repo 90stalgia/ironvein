@@ -24,6 +24,9 @@ pub struct Matchmaker {
     lobby: Lobby<WasmRelay>,
     region: String,
     last_advert: u64,
+    /// when true, our beacon is invite-only (no global topic): only peers who
+    /// know our room code can find us. Set by `go_private`.
+    private: bool,
 }
 
 impl Matchmaker {
@@ -38,7 +41,28 @@ impl Matchmaker {
         // beacons from replaying their entire backlog (the kind=29001 flood).
         let since = (now_ms() / 1000).saturating_sub(120);
         let lobby = Lobby::new(WasmRelay::connect(relays), identity, &[], Some(since));
-        Matchmaker { lobby, region: region.to_string(), last_advert: 0 }
+        Matchmaker { lobby, region: region.to_string(), last_advert: 0, private: false }
+    }
+
+    /// Our stable, shareable room code (derived from our identity key). Hand it
+    /// to a friend; they type it to find an invite-only colony we host.
+    pub fn room_code(&self) -> String {
+        crate::nostr::host_room_code(&self.my_key())
+    }
+
+    /// Switch hosting to invite-only: beacon on the code-derived private region
+    /// (no global topic), so only peers who enter our `room_code()` discover us.
+    pub fn go_private(&mut self) {
+        self.region = crate::nostr::room_code_region(&self.room_code());
+        self.private = true;
+        self.last_advert = 0; // beacon promptly under the new topic
+    }
+
+    /// Joiner: start listening for the invite-only host behind `code`. After
+    /// this, that host's beacon shows up in `regions()` (its region equals
+    /// `room_code_region(code)`), and you dial it like any other.
+    pub fn watch_code(&mut self, code: &str) {
+        self.lobby.watch_region(&crate::nostr::room_code_region(code));
     }
 
     pub fn my_key(&self) -> PubKey {
@@ -70,6 +94,7 @@ impl Matchmaker {
             genesis,
             controller,
             controller_name: controller_name.to_string(),
+            private: self.private,
         };
         self.lobby.advertise(&beacon, now);
     }

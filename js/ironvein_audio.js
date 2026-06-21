@@ -109,12 +109,37 @@
     const env = importObject.env;
     const str = function (p, l) { return new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, p, l)); };
     env.ivn_audio_load = function (np, nl, up, ul) { loadAudio(str(np, nl), str(up, ul)); };
+    // Build an AudioBuffer from in-memory interleaved-f32 PCM (the procedurally
+    // synthesised music layers — see crate::music). No fetch, no decode: the
+    // browser gets a full adaptive soundtrack with zero audio download.
+    env.ivn_audio_load_pcm = function (np, nl, ptr, total, channels, rate) {
+      const c = ensureCtx();
+      if (!c) return;
+      const name = str(np, nl);
+      const frames = (total / channels) | 0;
+      // copy out of wasm memory now (the view is invalidated if memory grows)
+      const data = new Float32Array(wasm_memory.buffer, ptr, total).slice();
+      const ab = c.createBuffer(channels, frames, rate);
+      for (let ch = 0; ch < channels; ch++) {
+        const out = ab.getChannelData(ch);
+        for (let i = 0; i < frames; i++) out[i] = data[i * channels + ch];
+      }
+      buffers[name] = ab;
+      if (pendingLoop[name] !== undefined) {
+        const v = pendingLoop[name];
+        delete pendingLoop[name];
+        startLoop(name, v);
+      }
+    };
     env.ivn_audio_play = function (np, nl, vol, looping) {
       if (looping) startLoop(str(np, nl), vol);
       else playOnce(str(np, nl), vol);
     };
     env.ivn_audio_stop = function (np, nl) { stopLoop(str(np, nl)); };
     env.ivn_audio_master = function (vol) { if (master) master.gain.value = vol; };
+    // 1 once the named clip has fetched + decoded (lets Rust wait for the music
+    // stems to arrive before crossfading the master loop over to adaptive layers)
+    env.ivn_audio_have = function (np, nl) { return buffers[str(np, nl)] ? 1 : 0; };
     // live volume for a running loop (the settings sliders)
     env.ivn_audio_gain = function (np, nl, vol) {
       const name = str(np, nl);

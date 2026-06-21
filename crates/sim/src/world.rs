@@ -379,11 +379,31 @@ impl World {
         let site = self.map.spawns[site_i];
         self.map.spawn_used[site_i] = pid;
 
+        // Pick a colour that doesn't clash with anyone already in the world: if the
+        // requested one is taken (e.g. a second player defaulting to red), bump to
+        // the lowest free colour. Deterministic, so every peer agrees. Falls back
+        // to the request only if all 8 are in use.
+        let want = color % 8;
+        let taken: [bool; 8] = {
+            let mut t = [false; 8];
+            for (i, p) in self.players.iter().enumerate() {
+                if i != pid as usize && p.joined {
+                    t[(p.color % 8) as usize] = true;
+                }
+            }
+            t
+        };
+        let chosen = if taken[want as usize] {
+            (0..8).find(|c| !taken[*c as usize]).unwrap_or(want)
+        } else {
+            want
+        };
+
         {
             let p = &mut self.players[pid as usize];
             p.joined = true;
             p.name = name.chars().take(16).collect();
-            p.color = color % 8;
+            p.color = chosen;
             p.key = *key;
             p.credits = STARTING_CREDITS;
             p.wood = crate::stats::STARTING_WOOD;
