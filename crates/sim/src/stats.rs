@@ -343,8 +343,9 @@ pub fn stats(k: Kind) -> Stats {
         NetherPortal => s("Nether Portal", 8000, 0, 0, 0, 0, 0, 0, 6, 0, (2, 2), None),
         // nether grunt: faster and far tougher than a werewolf, and the sun can't touch it
         Demon => s("Demon", 300, 0, 0, 38, 36, 1, 7, 11, 0, (1, 1), None),
-        // a nether bruiser-boss: tough, a long-reaching firewhip
-        Balrog => s("Balrog", 9000, 0, 0, 17, 88, 6, 7, 18, 0, (1, 1), None),
+        // a nether bruiser-boss: tough but killable (Moloch is the apex). A heavy,
+        // SLOW firewhip — threatens your base over time, doesn't delete it.
+        Balrog => s("Balrog", 4000, 0, 0, 17, 52, 6, 14, 18, 0, (1, 1), None),
         // drifting essence cloud: harmless in combat (NEUTRAL, unarmed) — the danger
         // is touching it. `hp` doubles as its lifetime, ticked down in sys_nether_smoke.
         EssenceSmoke => s("Essence Smoke", 600, 0, 0, 0, 0, 0, 0, 4, 0, (1, 1), None),

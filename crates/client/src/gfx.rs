@@ -1596,20 +1596,21 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             draw_circle(c.x + 1.0, c.y - 6.0, 0.7, rgb(1.0, 0.72, 0.2));
         }
         Kind::Balrog => {
-            // the nether's lord: a towering fire-wreathed shadow with a firewhip
-            glow(c - vec2(0.0, 4.0), 18.0, rgb(1.0, 0.4, 0.1), 0.55);
-            draw_triangle(c + vec2(-10.0, -2.0), c + vec2(0.0, -16.0), c + vec2(-2.0, 2.0), rgb(0.10, 0.05, 0.06)); // wings
-            draw_triangle(c + vec2(10.0, -2.0), c + vec2(0.0, -16.0), c + vec2(2.0, 2.0), rgb(0.10, 0.05, 0.06));
-            draw_rectangle(c.x - 5.0, c.y - 8.0, 10.0, 16.0, rgb(0.16, 0.05, 0.05)); // body
-            draw_line(c.x - 4.0, c.y - 3.0, c.x + 4.0, c.y - 3.0, 1.4, rgb(1.0, 0.46, 0.12)); // ember seams
-            draw_line(c.x - 4.0, c.y + 1.0, c.x + 4.0, c.y + 1.0, 1.2, rgb(0.9, 0.3, 0.08));
-            draw_circle(c.x, c.y - 11.0, 3.4, rgb(0.20, 0.06, 0.06)); // head
-            draw_line(c.x - 2.5, c.y - 13.0, c.x - 5.2, c.y - 17.5, 1.6, rgb(0.12, 0.04, 0.04)); // horns
-            draw_line(c.x + 2.5, c.y - 13.0, c.x + 5.2, c.y - 17.5, 1.6, rgb(0.12, 0.04, 0.04));
-            draw_circle(c.x - 1.3, c.y - 11.0, 0.9, rgb(1.0, 0.85, 0.3)); // eyes
-            draw_circle(c.x + 1.3, c.y - 11.0, 0.9, rgb(1.0, 0.85, 0.3));
-            draw_line(c.x, c.y, c.x + d.x * 18.0, c.y + d.y * 18.0, 2.4, rgb(1.0, 0.5, 0.15)); // firewhip
-            draw_circle(c.x + d.x * 18.0, c.y + d.y * 18.0, 2.0, rgb(1.0, 0.82, 0.3));
+            // a towering fire-wreathed bruiser with a firewhip — big, but no Moloch
+            let sc = 2.2;
+            glow(c - vec2(0.0, 6.0 * sc), 18.0 * sc, rgb(1.0, 0.4, 0.1), 0.55);
+            draw_triangle(c + vec2(-10.0 * sc, -2.0 * sc), c + vec2(0.0, -16.0 * sc), c + vec2(-2.0 * sc, 2.0 * sc), rgb(0.10, 0.05, 0.06)); // wings
+            draw_triangle(c + vec2(10.0 * sc, -2.0 * sc), c + vec2(0.0, -16.0 * sc), c + vec2(2.0 * sc, 2.0 * sc), rgb(0.10, 0.05, 0.06));
+            draw_rectangle(c.x - 5.0 * sc, c.y - 8.0 * sc, 10.0 * sc, 16.0 * sc, rgb(0.16, 0.05, 0.05)); // body
+            draw_line(c.x - 4.0 * sc, c.y - 3.0 * sc, c.x + 4.0 * sc, c.y - 3.0 * sc, 1.4 * sc, rgb(1.0, 0.46, 0.12)); // ember seams
+            draw_line(c.x - 4.0 * sc, c.y + 1.0 * sc, c.x + 4.0 * sc, c.y + 1.0 * sc, 1.2 * sc, rgb(0.9, 0.3, 0.08));
+            draw_circle(c.x, c.y - 11.0 * sc, 3.4 * sc, rgb(0.20, 0.06, 0.06)); // head
+            draw_line(c.x - 2.5 * sc, c.y - 13.0 * sc, c.x - 5.2 * sc, c.y - 17.5 * sc, 1.6 * sc, rgb(0.12, 0.04, 0.04)); // horns
+            draw_line(c.x + 2.5 * sc, c.y - 13.0 * sc, c.x + 5.2 * sc, c.y - 17.5 * sc, 1.6 * sc, rgb(0.12, 0.04, 0.04));
+            draw_circle(c.x - 1.3 * sc, c.y - 11.0 * sc, 0.9 * sc, rgb(1.0, 0.85, 0.3)); // eyes
+            draw_circle(c.x + 1.3 * sc, c.y - 11.0 * sc, 0.9 * sc, rgb(1.0, 0.85, 0.3));
+            draw_line(c.x, c.y, c.x + d.x * 18.0 * sc, c.y + d.y * 18.0 * sc, 2.4 * sc, rgb(1.0, 0.5, 0.15)); // firewhip
+            draw_circle(c.x + d.x * 18.0 * sc, c.y + d.y * 18.0 * sc, 2.0 * sc, rgb(1.0, 0.82, 0.3));
         }
         Kind::EssenceSmoke => {
             // a drifting violet cloud — touch it and a unit turns to the dark side
