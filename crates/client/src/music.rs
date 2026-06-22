@@ -37,6 +37,12 @@ pub fn generate_title() -> (Vec<f32>, u16, u32) {
     crate::synth::render_title()
 }
 
+/// The netherealm bed — one looping stereo track of dread, played in-game while
+/// `realm == Nether` (see `audio::prepare_nether`). Spooky/haunting, not a tune.
+pub fn generate_nether() -> (Vec<f32>, u16, u32) {
+    crate::synth::render_nether()
+}
+
 // ---------------------------------------------------------------------------
 // Sound effects — same philosophy as the music: nothing is fetched, every shot,
 // explosion, clink and gust is SYNTHESISED here at startup. Mono, 22050 Hz.
@@ -309,6 +315,13 @@ pub fn render_wav(path: &str) -> std::io::Result<()> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn render_title_wav(path: &str) -> std::io::Result<()> {
     let (buf, _ch, rate) = generate_title();
+    write_wav_stereo(path, &buf, rate)
+}
+
+/// Audition the netherealm bed as a 16-bit stereo WAV. Native only.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn render_nether_wav(path: &str) -> std::io::Result<()> {
+    let (buf, _ch, rate) = generate_nether();
     write_wav_stereo(path, &buf, rate)
 }
 

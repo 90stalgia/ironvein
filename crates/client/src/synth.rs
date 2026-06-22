@@ -1372,6 +1372,86 @@ pub fn render_title() -> (Vec<f32>, u16, u32) {
     (interleave(&master), 2u16, SR as u32)
 }
 
+/// THE NETHEREALM THEME — spooky, haunting, wrong. Built from horror-audio
+/// psychology with the existing voices: an infrasonic sub-drone floor, the
+/// **tritone** (E vs A#/Bb, the *diabolus in musica*) and a **minor-2nd cluster**
+/// (E+F) that never resolves, the harsh AM "psycho" shriek, an **irregular**
+/// sub-heartbeat (unpredictable = anxious), and sparse high **stings** for that
+/// something's-about-to-happen dread. No melody, no cadence, no relief.
+fn build_nether(mix: &mut Mix, length: usize) {
+    let lb = length as f64;
+    // infrasonic dread floor: the root sub + a tritone beneath it (very low, quiet)
+    put(mix, "bass", synth_bass("E1", lb, 0.72, true, 1), 0.0, 0.0, 0.0);
+    put(mix, "bass", synth_bass("A#1", lb, 0.42, true, 2), 0.0, 0.0, 0.0);
+    // the centerpiece: harsh detuned AM tension drones on the root and the tritone
+    put(mix, "psycho", synth_psycho("E2", lb, 0.85, 1.6, 3), 0.0, -0.35, 0.0);
+    put(mix, "psycho", synth_psycho("A#2", lb, 0.6, 1.95, 4), 0.0, 0.35, 0.0);
+    // a cold, unresolving cluster pad: root + minor-2nd + tritone, beating against each other
+    put(mix, "pads", synth_pad("E3", lb, 0.5, 5), 0.0, 0.0, 0.0);
+    put(mix, "pads", synth_pad("F3", lb, 0.3, 6), 0.0, 0.0, 0.0);
+    put(mix, "pads", synth_pad("A#3", lb, 0.3, 7), 0.0, 0.0, 0.0);
+    // irregular sub-heartbeat: a slow, jittered pulse you can't quite predict
+    let mut b = 0.0;
+    while b < lb {
+        let jit = mix.rng.range(-28.0, 28.0);
+        put(mix, "kick", drum("kick", 1.0, 0.5, (b as u64) % 8), b, 0.0, jit);
+        b += 5.0 + mix.rng.range(0.0, 3.0);
+    }
+    // sparse high stings — sudden dissonant shrieks at unpredictable moments
+    let stings = ["A#5", "F5", "B5", "C6"];
+    let mut s = 6.0 + mix.rng.range(0.0, 4.0);
+    let mut i = 0usize;
+    while s < lb {
+        let note = stings[i % stings.len()];
+        let pan = if i % 2 == 0 { -0.75 } else { 0.75 };
+        put(mix, "arps", synth_hypersaw(note, note, 1.5, 0.2, (i as u64) % 8), s, pan, 0.0);
+        s += 6.0 + mix.rng.range(0.0, 6.0);
+        i += 1;
+    }
+}
+
+/// Render the netherealm bed: one ~20 s loop of `build_nether`, run through a
+/// deliberately DARK chain — cavernous reverb on the drones, a heavy low-pass
+/// (muffled, underground, claustrophobic) and the tape wow/flutter for sickly
+/// pitch instability. Quiet and oppressive, not a tune you hum.
+pub fn render_nether() -> (Vec<f32>, u16, u32) {
+    let length = 32usize; // 20 s loop
+    let n = samples_of(length as f64);
+    let mut mix = Mix::new(n);
+    mix.rng = Rng::new(0x4E37_4E); // distinct humanisation seed
+    build_nether(&mut mix, length);
+    // cavernous space on the drones/stings (its own echo chamber down there)
+    stereo_space(&mut mix.psycho);
+    stereo_space(&mut mix.pads);
+    stereo_space(&mut mix.arps);
+    let mut master = Stereo::zeros(n);
+    for s in [&mix.kick, &mix.bass, &mix.psycho, &mix.pads, &mix.arps] {
+        for i in 0..n {
+            master.l[i] += s.l[i];
+            master.r[i] += s.r[i];
+        }
+    }
+    // console crosstalk + sickly tape pitch instability
+    for i in 0..n {
+        let (l, r) = (master.l[i], master.r[i]);
+        master.l[i] = l * 0.94 + r * 0.06;
+        master.r[i] = r * 0.94 + l * 0.06;
+    }
+    wow_flutter(&mut master);
+    // heavy, muffled low-pass — underground, oppressive, close
+    master.l = lp(&master.l, 4200.0);
+    master.r = lp(&master.r, 4200.0);
+    for ch in [&mut master.l, &mut master.r] {
+        for v in ch.iter_mut() {
+            *v = (*v * 1.15).tanh();
+        }
+    }
+    let peak = master.l.iter().chain(master.r.iter()).fold(0.0f64, |a, &b| a.max(b.abs())).max(1e-6);
+    master.scale(0.8 / peak);
+    declick(&mut master);
+    (interleave(&master), 2u16, SR as u32)
+}
+
 /// Catmull-Rom cubic-spline tape pitch instability (wow + flutter).
 fn wow_flutter(s: &mut Stereo) {
     let n = s.len();
@@ -1446,6 +1526,23 @@ mod tests {
         assert!(energy > 10.0, "title silent");
         let n = buf.len();
         assert!(buf[0].abs() < 0.06 && buf[n - 1].abs() < 0.06, "title seam not de-clicked");
+    }
+
+    #[test]
+    fn nether_theme_renders_finite_loopable_and_audible() {
+        let (buf, ch, rate) = render_nether();
+        assert_eq!(ch, 2);
+        assert_eq!(rate, SR as u32);
+        let (mut peak, mut energy) = (0.0f32, 0.0f64);
+        for &v in &buf {
+            assert!(v.is_finite(), "non-finite nether sample");
+            peak = peak.max(v.abs());
+            energy += (v as f64) * (v as f64);
+        }
+        assert!(peak <= 1.0, "nether clips ({peak})");
+        assert!(energy > 10.0, "nether silent");
+        let n = buf.len();
+        assert!(buf[0].abs() < 0.06 && buf[n - 1].abs() < 0.06, "nether seam not de-clicked");
     }
 
     #[test]

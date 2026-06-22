@@ -202,6 +202,15 @@ fn parse_args() -> Args {
                 }
                 std::process::exit(0);
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            "--render-nether" => {
+                let path = argv.get(i + 1).cloned().unwrap_or_else(|| "ironvein_nether.wav".into());
+                match music::render_nether_wav(&path) {
+                    Ok(()) => println!("rendered netherealm bed -> {path}"),
+                    Err(e) => eprintln!("render-nether failed: {e}"),
+                }
+                std::process::exit(0);
+            }
             "--help" | "-h" => {
                 println!("ironvein [--name N] [--color 0-7] [--bots N] [--map valley|skirmish] [--seed N]");
                 println!("         [--host PORT] [--join IP:PORT] [--listen PORT] [--load FILE] [--save-dir DIR]");
@@ -959,6 +968,9 @@ async fn main() {
     // ...then a softer, bedded title theme for the menu (the gameplay stems stay
     // silent on the menu — they only ride up with battle intensity in-game).
     audio::prepare_title();
+    // ...and the netherealm bed (silent until the player descends), composed now
+    // so the descent never hitches mid-game.
+    audio::prepare_nether();
 
     // Per-mode save slots so Survival/Skirmish runs each resume independently.
     let save_dir = std::path::PathBuf::from(&args.save_dir);
@@ -1193,10 +1205,13 @@ async fn main() {
         audio::update();
         // browser: once the stems finish downloading, upgrade master → adaptive
         audio::poll_adaptive();
+        // in the netherealm a dedicated haunting bed takes over (stems duck out)
+        audio::set_nether(matches!(app.session.world.realm, ironvein_sim::world::Realm::Nether));
         // ride the adaptive soundtrack on how dangerous things feel right now
         if audio::adaptive_music() {
             audio::set_music_intensity(app.music_intensity());
         }
+        audio::pump_nether();
 
         // age out the "while you were away" report (any key or ~20s dismisses)
         if app.away_report.is_some() {

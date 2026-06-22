@@ -237,6 +237,10 @@ use std::sync::atomic::AtomicBool;
 static ADAPTIVE: AtomicBool = AtomicBool::new(false);
 /// True while the title-screen theme is looping (so `set_volumes` can ride it).
 static TITLE_ON: AtomicBool = AtomicBool::new(false);
+/// True while the player is in the netherealm — the nether bed plays and the
+/// overworld stems duck to silence (crossfaded by `pump_nether`/`set_music_intensity`).
+static NETHER_ON: AtomicBool = AtomicBool::new(false);
+static NETHER_GAIN: AtomicU32 = AtomicU32::new(0); // current ramped gain (f32 bits)
 // per-stem current gain (f32 bits), ramped toward target each frame for smooth fades
 static STEM_GAIN: [AtomicU32; 7] = [
     AtomicU32::new(0),
@@ -366,6 +370,32 @@ pub fn stop_title() {
     }
 }
 
+/// Synthesise the netherealm bed and start it looping at silence. It rides up
+/// (and the overworld stems duck) when the player descends. Composed at startup
+/// alongside the rest so the descent never hitches. Call once.
+pub fn prepare_nether() {
+    let (samples, ch, rate) = crate::music::generate_nether();
+    ffi::load_pcm("nether", &samples, ch, rate);
+    ffi::play("nether", 0.0, true);
+}
+
+/// Tell the audio layer whether the player is in the netherealm. The crossfade
+/// (nether bed up, stems down) is then ramped each frame by `pump_nether` +
+/// `set_music_intensity`. Cheap; call every frame.
+pub fn set_nether(active: bool) {
+    NETHER_ON.store(active, Ordering::Relaxed);
+}
+
+/// Ramp the netherealm bed toward its target (full music level in the nether,
+/// silent otherwise) — a smooth crossfade. Call every frame.
+pub fn pump_nether() {
+    let target = if NETHER_ON.load(Ordering::Relaxed) { level(&MUSIC) * level(&MASTER) } else { 0.0 };
+    let cur = f32::from_bits(NETHER_GAIN.load(Ordering::Relaxed));
+    let nv = cur + (target - cur) * 0.03; // ~0.5s glide — an ominous fade
+    NETHER_GAIN.store(nv.to_bits(), Ordering::Relaxed);
+    ffi::gain("nether", nv);
+}
+
 /// Browser-side upgrade: once every stem has fetched + decoded, crossfade from
 /// the master loop to the layered adaptive soundtrack. No-op once adaptive (and a
 /// no-op on native, where the choice was settled at preload). Call once a frame.
@@ -396,7 +426,8 @@ pub fn set_music_intensity(x: f32) {
         return;
     }
     let x = x.clamp(0.0, 1.0);
-    let m = level(&MUSIC) * level(&MASTER);
+    // in the netherealm the overworld stems duck to silence (the nether bed takes over)
+    let m = if NETHER_ON.load(Ordering::Relaxed) { 0.0 } else { level(&MUSIC) * level(&MASTER) };
     for (i, (name, _f, base, fade_in, full)) in STEMS.iter().enumerate() {
         let tier = if full <= fade_in { 1.0 } else { ((x - fade_in) / (full - fade_in)).clamp(0.0, 1.0) };
         let target = base * tier * m;
