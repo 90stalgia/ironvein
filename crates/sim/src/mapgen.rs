@@ -253,6 +253,127 @@ pub fn verdant_divide(seed: u64, mode: Mode) -> World {
     world
 }
 
+/// THE NETHEREALM — the map you descend into when you march a force through the
+/// Warlock's rift. Returns just the `Map` (the descent keeps the existing World,
+/// players and surviving army, and only swaps the ground beneath them). Built
+/// from the passed world RNG, so every peer descends into an identical hell.
+/// Ash plains cut by lava, obsidian spires for stone, charred groves for wood,
+/// ember-ore for credits, four landing sites — and no kind sun overhead.
+pub fn nether_realm(rng: &mut Pcg32) -> Map {
+    let size = 128;
+    let mut m = Map::new(size, size);
+    // base: the whole realm is ash
+    for y in 0..size {
+        for x in 0..size {
+            m.set_terrain(Tp::new(x, y), Terrain::Ash);
+        }
+    }
+    // charred dirt for texture
+    for _ in 0..60 {
+        let (cx, cy, r) = (rng.range_i32(2, size - 3), rng.range_i32(2, size - 3), rng.range_i32(2, 5));
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let t = Tp::new(cx + dx, cy + dy);
+                if dx * dx + dy * dy <= r * r && m.terrain_at(t) == Terrain::Ash {
+                    m.set_terrain(t, Terrain::Dirt);
+                }
+            }
+        }
+    }
+    // lava lakes
+    for _ in 0..11 {
+        let (cx, cy, r) = (rng.range_i32(8, size - 9), rng.range_i32(8, size - 9), rng.range_i32(4, 9));
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let t = Tp::new(cx + dx, cy + dy);
+                if dx * dx + dy * dy <= r * r && matches!(m.terrain_at(t), Terrain::Ash | Terrain::Dirt) {
+                    m.set_terrain(t, Terrain::Lava);
+                }
+            }
+        }
+    }
+    // a winding lava river
+    let mut cx = size / 2;
+    for y in 0..size {
+        cx = (cx + rng.range_i32(-1, 1)).clamp(size / 2 - 14, size / 2 + 14);
+        for dx in -2..=2 {
+            let t = Tp::new(cx + dx, y);
+            if matches!(m.terrain_at(t), Terrain::Ash | Terrain::Dirt) {
+                m.set_terrain(t, Terrain::Lava);
+            }
+        }
+    }
+    // obsidian spires (the stone source), clustered like rocky highlands
+    for _ in 0..14 {
+        let (mut x, mut y) = (rng.range_i32(6, size - 7), rng.range_i32(6, size - 7));
+        for _ in 0..rng.range_i32(8, 18) {
+            let t = Tp::new(x, y);
+            if m.terrain_at(t) == Terrain::Ash {
+                m.set_terrain(t, Terrain::Obsidian);
+            }
+            x += rng.range_i32(-1, 1);
+            y += rng.range_i32(-1, 1);
+        }
+    }
+    // charred groves (wood) — petrified forests on the ash
+    for _ in 0..16 {
+        let (cx, cy, r) = (rng.range_i32(4, size - 5), rng.range_i32(4, size - 5), rng.range_i32(2, 4));
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let t = Tp::new(cx + dx, cy + dy);
+                if dx * dx + dy * dy <= r * r && rng.chance(6, 10) && m.terrain_at(t) == Terrain::Ash {
+                    m.set_terrain(t, Terrain::Tree);
+                }
+            }
+        }
+    }
+    // ember-ore fields (credits) + regrowth nodes
+    let anchors = [(28, 28), (size - 29, 28), (28, size - 29), (size - 29, size - 29), (size / 2, size / 2 - 20), (size / 2, size / 2 + 20)];
+    for &(ax, ay) in &anchors {
+        let (cx, cy) = (ax + rng.range_i32(-3, 3), ay + rng.range_i32(-3, 3));
+        let c = Tp::new(cx, cy);
+        for dy in -4..=4 {
+            for dx in -4..=4 {
+                let d2 = dx * dx + dy * dy;
+                let t = Tp::new(cx + dx, cy + dy);
+                if d2 <= 16 && m.terrain_at(t).ground() {
+                    m.set_ore(t, (520 - d2 * 28 + rng.range_i32(-60, 60)).clamp(80, 650) as u16);
+                }
+            }
+        }
+        if m.terrain_at(c).ground() {
+            m.nodes.push(c);
+        }
+    }
+    // landing sites: clear ash, guaranteed room for a 3x3 yard
+    for s in [Tp::new(16, 16), Tp::new(size - 20, 16), Tp::new(16, size - 20), Tp::new(size - 20, size - 20)].iter() {
+        for dy in -3..7 {
+            for dx in -3..7 {
+                let t = Tp::new(s.x + dx, s.y + dy);
+                if !m.terrain_at(t).buildable() {
+                    m.set_terrain(t, Terrain::Ash);
+                }
+                m.set_ore(t, 0);
+            }
+        }
+        m.spawns.push(*s);
+        m.spawn_used.push(NEUTRAL);
+    }
+    // resource AMOUNT rides the ore layer; TYPE is read from terrain (obsidian → stone,
+    // charred tree → wood), same convention as the overworld.
+    for y in 0..size {
+        for x in 0..size {
+            let t = Tp::new(x, y);
+            match m.terrain_at(t) {
+                Terrain::Tree => m.set_ore(t, TREE_WOOD),
+                Terrain::Obsidian => m.set_ore(t, ROCK_STONE),
+                _ => {}
+            }
+        }
+    }
+    m
+}
+
 fn blob(m: &mut Map, rng: &mut Pcg32, ter: Terrain, rmin: i32, rmax: i32) {
     let cx = rng.range_i32(2, m.w - 3);
     let cy = rng.range_i32(2, m.h - 3);

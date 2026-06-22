@@ -177,6 +177,10 @@ fn terrain_tint(w: &World, t: Tp) -> Color {
         Terrain::Ice => mix(rgb(0.62, 0.82, 0.92), rgb(0.52, 0.74, 0.90), 0.5 + v),
         Terrain::Marsh => mix(rgb(0.24, 0.36, 0.30), rgb(0.15, 0.26, 0.22), 0.5 + v),
         Terrain::Mountain => mix(rgb(0.40, 0.37, 0.50), rgb(0.25, 0.24, 0.36), 0.5 + v),
+        // the netherealm: molten lava, charred ash, black obsidian
+        Terrain::Lava => mix(rgb(0.97, 0.46, 0.13), rgb(0.66, 0.13, 0.05), 0.5 + v * 2.0),
+        Terrain::Ash => mix(rgb(0.25, 0.21, 0.22), rgb(0.15, 0.13, 0.14), 0.5 + v),
+        Terrain::Obsidian => mix(rgb(0.18, 0.12, 0.22), rgb(0.09, 0.06, 0.12), 0.5 + v),
     }
 }
 
@@ -1193,6 +1197,24 @@ fn draw_iso_building(w: &World, e: &ironvein_sim::Ent, cam: Vec2, col: Color, se
             }
             topp
         }
+        // -- the Nether Portal: a swirling rift framed by jagged stones ---------
+        Kind::NetherPortal => {
+            let cg = (bn + be + bs + bw) * 0.25;
+            draw_circle(cg.x, cg.y + 2.0, 16.0, Color::new(0.05, 0.02, 0.04, 0.6)); // scorched ground
+            // jagged stones framing the rift
+            draw_triangle(vec2(cg.x - 14.0, cg.y + 4.0), vec2(cg.x - 10.0, cg.y - 18.0), vec2(cg.x - 7.0, cg.y + 4.0), rgb(0.13, 0.08, 0.15));
+            draw_triangle(vec2(cg.x + 14.0, cg.y + 4.0), vec2(cg.x + 10.0, cg.y - 18.0), vec2(cg.x + 7.0, cg.y + 4.0), rgb(0.13, 0.08, 0.15));
+            // concentric pulsing rings of hellfire
+            let pulse = 0.5 + 0.5 * (tick as f32 * 0.12).sin();
+            for k in 0..4 {
+                let r = 14.0 - k as f32 * 3.0;
+                let a = (0.35 + 0.55 * pulse * (1.0 - k as f32 * 0.2)).min(1.0);
+                draw_circle_lines(cg.x, cg.y - 4.0, r, 2.0, Color::new(0.95, 0.34 - k as f32 * 0.05, 0.5 - k as f32 * 0.08, a));
+            }
+            draw_circle(cg.x, cg.y - 4.0, 5.0, rgb(0.02, 0.0, 0.03)); // the void at the centre
+            glow(vec2(cg.x, cg.y - 4.0), 18.0, rgb(0.9, 0.25, 0.55), 0.4 + 0.4 * pulse);
+            vec2(cg.x, cg.y - 18.0)
+        }
         _ => {
             let r = iso_box(bn, be, bs, bw, bld_height(fw, fh), rgb(0.4, 0.4, 0.43));
             (r[0] + r[1] + r[2] + r[3]) * 0.25
@@ -1430,6 +1452,33 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             draw_line(hc.x, hc.y - 1.0, hc.x - 1.5, hc.y - 4.0, 1.0, rgb(0.78, 0.66, 0.48));
             draw_line(hc.x, hc.y - 1.0, hc.x + 1.5, hc.y - 4.0, 1.0, rgb(0.78, 0.66, 0.48));
             draw_line(c.x - 4.0, c.y + 0.5, c.x - 7.0, c.y - 1.0, 1.2, fur); // tail tuft
+        }
+        Kind::Demon => {
+            // nether grunt: a hunched, ember-lit brute with horns and burning eyes
+            glow(c, 9.0, rgb(0.9, 0.3, 0.1), 0.4);
+            draw_rectangle(c.x - 3.5, c.y - 4.0, 7.0, 9.0, rgb(0.42, 0.10, 0.10)); // torso
+            draw_rectangle(c.x - 3.5, c.y - 4.0, 2.5, 9.0, rgb(0.56, 0.16, 0.12)); // lit edge
+            draw_circle(c.x, c.y - 6.0, 2.6, rgb(0.30, 0.07, 0.07)); // head
+            draw_line(c.x - 2.0, c.y - 7.5, c.x - 3.6, c.y - 10.2, 1.2, rgb(0.14, 0.05, 0.05)); // horns
+            draw_line(c.x + 2.0, c.y - 7.5, c.x + 3.6, c.y - 10.2, 1.2, rgb(0.14, 0.05, 0.05));
+            draw_circle(c.x - 1.0, c.y - 6.0, 0.7, rgb(1.0, 0.72, 0.2)); // eyes
+            draw_circle(c.x + 1.0, c.y - 6.0, 0.7, rgb(1.0, 0.72, 0.2));
+        }
+        Kind::Balrog => {
+            // the nether's lord: a towering fire-wreathed shadow with a firewhip
+            glow(c - vec2(0.0, 4.0), 18.0, rgb(1.0, 0.4, 0.1), 0.55);
+            draw_triangle(c + vec2(-10.0, -2.0), c + vec2(0.0, -16.0), c + vec2(-2.0, 2.0), rgb(0.10, 0.05, 0.06)); // wings
+            draw_triangle(c + vec2(10.0, -2.0), c + vec2(0.0, -16.0), c + vec2(2.0, 2.0), rgb(0.10, 0.05, 0.06));
+            draw_rectangle(c.x - 5.0, c.y - 8.0, 10.0, 16.0, rgb(0.16, 0.05, 0.05)); // body
+            draw_line(c.x - 4.0, c.y - 3.0, c.x + 4.0, c.y - 3.0, 1.4, rgb(1.0, 0.46, 0.12)); // ember seams
+            draw_line(c.x - 4.0, c.y + 1.0, c.x + 4.0, c.y + 1.0, 1.2, rgb(0.9, 0.3, 0.08));
+            draw_circle(c.x, c.y - 11.0, 3.4, rgb(0.20, 0.06, 0.06)); // head
+            draw_line(c.x - 2.5, c.y - 13.0, c.x - 5.2, c.y - 17.5, 1.6, rgb(0.12, 0.04, 0.04)); // horns
+            draw_line(c.x + 2.5, c.y - 13.0, c.x + 5.2, c.y - 17.5, 1.6, rgb(0.12, 0.04, 0.04));
+            draw_circle(c.x - 1.3, c.y - 11.0, 0.9, rgb(1.0, 0.85, 0.3)); // eyes
+            draw_circle(c.x + 1.3, c.y - 11.0, 0.9, rgb(1.0, 0.85, 0.3));
+            draw_line(c.x, c.y, c.x + d.x * 18.0, c.y + d.y * 18.0, 2.4, rgb(1.0, 0.5, 0.15)); // firewhip
+            draw_circle(c.x + d.x * 18.0, c.y + d.y * 18.0, 2.0, rgb(1.0, 0.82, 0.3));
         }
         _ => {
             draw_circle(c.x, c.y, 5.0, col);

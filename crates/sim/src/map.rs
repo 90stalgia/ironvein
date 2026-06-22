@@ -18,6 +18,10 @@ pub enum Terrain {
     Ice = 9,
     Marsh = 10,
     Mountain = 11,
+    // ---- the netherealm (one-way descent endgame) ----
+    Lava = 12,     // impassable hazard (the nether's "water")
+    Ash = 13,      // the walkable, buildable nether ground (its "grass")
+    Obsidian = 14, // mineable spires — the nether's stone source (like Rock)
 }
 
 impl Terrain {
@@ -34,6 +38,9 @@ impl Terrain {
             9 => Terrain::Ice,
             10 => Terrain::Marsh,
             11 => Terrain::Mountain,
+            12 => Terrain::Lava,
+            13 => Terrain::Ash,
+            14 => Terrain::Obsidian,
             _ => Terrain::Grass,
         }
     }
@@ -48,15 +55,16 @@ impl Terrain {
                 | Terrain::Snow
                 | Terrain::Ice
                 | Terrain::Marsh
+                | Terrain::Ash
         )
     }
     /// Can a building footprint cover this tile?
     pub fn buildable(self) -> bool {
-        matches!(self, Terrain::Grass | Terrain::Dirt | Terrain::Road | Terrain::Sand | Terrain::Snow)
+        matches!(self, Terrain::Grass | Terrain::Dirt | Terrain::Road | Terrain::Sand | Terrain::Snow | Terrain::Ash)
     }
     /// Natural ground that can hold ore / host a regrowth node.
     pub fn ground(self) -> bool {
-        matches!(self, Terrain::Grass | Terrain::Dirt | Terrain::Sand | Terrain::Snow)
+        matches!(self, Terrain::Grass | Terrain::Dirt | Terrain::Sand | Terrain::Snow | Terrain::Ash)
     }
     /// Movement-speed multiplier in percent (100 = normal). Roads are fast,
     /// snow/marsh slow you down, ice is a touch slippery-quick.
@@ -144,9 +152,9 @@ impl Map {
             return None;
         }
         match self.terrain_at(t) {
-            Terrain::Grass | Terrain::Dirt | Terrain::Sand | Terrain::Snow => Some(0),
+            Terrain::Grass | Terrain::Dirt | Terrain::Sand | Terrain::Snow | Terrain::Ash => Some(0),
             Terrain::Tree => Some(1),
-            Terrain::Rock | Terrain::Mountain => Some(2),
+            Terrain::Rock | Terrain::Mountain | Terrain::Obsidian => Some(2),
             _ => None,
         }
     }
@@ -156,6 +164,7 @@ impl Map {
         match self.terrain_at(t) {
             Terrain::Tree => self.set_terrain(t, Terrain::Grass),
             Terrain::Rock | Terrain::Mountain => self.set_terrain(t, Terrain::Dirt),
+            Terrain::Obsidian => self.set_terrain(t, Terrain::Ash),
             _ => {}
         }
     }

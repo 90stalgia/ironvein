@@ -38,6 +38,24 @@ impl Mode {
     }
 }
 
+/// Which world the match is in. Slaying the Warlock opens a rift; marching a
+/// force through it is a one-way **descent** into the netherealm (the map is
+/// regenerated, the surviving army carried down). Part of world state (save v12).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum Realm {
+    Overworld = 0,
+    Nether = 1,
+}
+impl Realm {
+    pub fn from_u8(v: u8) -> Realm {
+        match v {
+            1 => Realm::Nether,
+            _ => Realm::Overworld,
+        }
+    }
+}
+
 /// What happened to a settlement while its owner was away — the "since you
 /// left" report. Accumulates whenever the owner isn't actively issuing
 /// commands; reset to a fresh window on any deliberate action (so a present
@@ -208,6 +226,8 @@ pub struct World {
     /// 0 = easy, 1 = normal, 2 = hard. Scales the night horde (v10). Part of
     /// world state so every peer breeds the identical difficulty-tuned swarm.
     pub difficulty: u8,
+    /// Overworld until the alliance descends through the Warlock's rift (v12).
+    pub realm: Realm,
     pub events: Vec<VisEvent>,
 }
 
@@ -232,6 +252,7 @@ impl World {
             peace_until: 0,
             loot: Vec::new(),
             difficulty: 1,
+            realm: Realm::Overworld,
             events: Vec::new(),
         }
     }
@@ -309,6 +330,7 @@ impl World {
         self.sys_loot();
         self.sys_ore_regen();
         self.sys_support();
+        self.sys_portal();
         self.sys_recompute();
         if self.tick % 2 == 0 {
             self.sys_fog();
@@ -1704,9 +1726,11 @@ impl World {
             // down by daylight, in sys_monsters, drops nothing — kill it yourself).
             if kind.is_monster() {
                 let ess = match kind {
+                    Kind::Balrog => 300,
                     Kind::Warlock => 250,
                     Kind::Lich => 60,
                     Kind::HellTank => 15,
+                    Kind::Demon => 8,
                     Kind::Vampire => 6,
                     Kind::Werewolf => 4,
                     _ => 2,
@@ -1745,6 +1769,23 @@ impl World {
                     }
                 }
                 self.push_chat(NEUTRAL, "THE RECKONING IS WON. The puppeteer falls and the nations stand united — the dark recedes. (+3000$, +120 essence to all who endured)".into());
+                // ...and a rift tears open where it fell. March a force through it
+                // to descend into the netherealm it crawled from (one-way).
+                if self.realm == Realm::Overworld && !self.ents.iter().any(|e| e.kind == Kind::NetherPortal) {
+                    if let Some(dt) = self.ents.get(id).map(|e| e.tile()) {
+                        self.open_nether_portal(dt);
+                    }
+                }
+            }
+            // THE TRUE VICTORY: slaying the Balrog clears the netherealm at its source.
+            if kind == Kind::Balrog {
+                for p in self.players.iter_mut() {
+                    if p.joined && !p.defeated {
+                        p.credits = p.credits.saturating_add(5000);
+                        p.essence = p.essence.saturating_add(200);
+                    }
+                }
+                self.push_chat(NEUTRAL, "THE BALROG FALLS. The netherealm's lord is slain — B-Proxima is yours, surface and deep. (+5000$, +200 essence)".into());
             }
             self.kill(id);
         }
@@ -1820,6 +1861,186 @@ impl World {
             }
         }
         None
+    }
+
+    /// The relentless nether brood: no day/night, just escalating Demon packs and
+    /// the periodic Balrog. Deterministic (rolls the world RNG), like the surface.
+    fn sys_nether_horde(&mut self) {
+        let alive: Vec<Pid> = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.joined && !p.defeated)
+            .map(|(i, _)| i as Pid)
+            .collect();
+        if alive.is_empty() {
+            return;
+        }
+        let depth = self.tick / DAY_LEN; // escalation step
+        let mut interval: u32 = 24;
+        if self.mode == Mode::Survival {
+            interval = interval * 2 / 3;
+        }
+        match self.difficulty {
+            0 => interval = interval * 3 / 2,
+            2 => interval = interval * 2 / 3,
+            _ => {}
+        }
+        interval = interval.max(6);
+        if self.tick % interval == 0 {
+            let horde = self.ents.iter().filter(|e| e.kind.is_monster()).count();
+            let mut cap = 14 + 6 * alive.len() + 4 * depth as usize;
+            if self.mode == Mode::Survival {
+                cap *= 2;
+            }
+            match self.difficulty {
+                0 => cap = cap * 3 / 5,
+                2 => cap = cap * 3 / 2 + 6,
+                _ => {}
+            }
+            if horde < cap {
+                let pack = self.rng.range_i32(2, 5);
+                if let Some(a) = self.random_edge_tile() {
+                    for _ in 0..pack {
+                        let ox = self.rng.range_i32(6, 18) * if self.rng.chance(1, 2) { 1 } else { -1 };
+                        let oy = self.rng.range_i32(6, 18) * if self.rng.chance(1, 2) { 1 } else { -1 };
+                        let st = Tp::new((a.x + ox).clamp(1, self.map.w - 2), (a.y + oy).clamp(1, self.map.h - 2));
+                        if let Some(t) = self.find_free_tile_near(st, 8) {
+                            self.spawn_monster(Kind::Demon, t);
+                        }
+                    }
+                }
+            }
+        }
+        // the Balrog stalks the deep — one at a time, on the half-cycle beat
+        if self.tick % (DAY_LEN / 2) == 0 && depth >= 1 && !self.ents.iter().any(|e| e.kind == Kind::Balrog) {
+            if let Some(t) = self.random_edge_tile().and_then(|e| self.find_free_tile_near(e, 10)) {
+                self.spawn_monster(Kind::Balrog, t);
+                self.push_chat(NEUTRAL, "The ash splits — A BALROG strides up from the deep. Bring it down.".into());
+            }
+        }
+    }
+
+    /// Is this footprint in-bounds and free of blocks (terrain we can flatten)?
+    fn footprint_open(&self, at: Tp, foot: (i32, i32)) -> bool {
+        for dy in 0..foot.1 {
+            for dx in 0..foot.0 {
+                let t = Tp::new(at.x + dx, at.y + dy);
+                if !self.map.in_bounds(t) || self.map.blocked_by(t) != 0 || self.map.terrain_at(t) == Terrain::Water {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Tear open the Warlock's rift near `near` — a free 2x2 NEUTRAL structure.
+    fn open_nether_portal(&mut self, near: Tp) {
+        let (fw, fh) = stats(Kind::NetherPortal).footprint;
+        let mut spot: Option<Tp> = None;
+        'search: for rad in 0..14 {
+            for dy in -rad..=rad {
+                for dx in -rad..=rad {
+                    let at = Tp::new(near.x + dx, near.y + dy);
+                    if self.footprint_open(at, (fw, fh)) {
+                        spot = Some(at);
+                        break 'search;
+                    }
+                }
+            }
+        }
+        let Some(at) = spot else { return };
+        for yy in 0..fh {
+            for xx in 0..fw {
+                let t = Tp::new(at.x + xx, at.y + yy);
+                if !self.map.terrain_at(t).buildable() {
+                    self.map.set_terrain(t, Terrain::Dirt);
+                }
+                self.map.set_ore(t, 0);
+            }
+        }
+        let id = self.ents.spawn(NEUTRAL, Kind::NetherPortal, Fp { x: at.x * FX, y: at.y * FX });
+        if let Some(e) = self.ents.get_mut(id) {
+            e.done = true;
+            e.hp = stats(Kind::NetherPortal).max_hp;
+        }
+        self.map.stamp_block(at, (fw, fh), id.idx + 1);
+    }
+
+    /// While a rift stands in the overworld, a player unit reaching it fires the
+    /// one-way descent (deterministic: a fixed proximity check each tick).
+    fn sys_portal(&mut self) {
+        if self.realm != Realm::Overworld {
+            return;
+        }
+        let portal = self.ents.iter().find(|e| e.kind == Kind::NetherPortal).map(|e| (e.tile(), e.foot()));
+        let Some((pt, (pw, ph))) = portal else { return };
+        let reached = self.ents.iter().any(|e| {
+            if !e.kind.is_unit() || e.owner == NEUTRAL || e.hp <= 0 {
+                return false;
+            }
+            let t = e.tile();
+            t.x >= pt.x - 1 && t.x <= pt.x + pw && t.y >= pt.y - 1 && t.y <= pt.y + ph
+        });
+        if reached {
+            self.descend_to_nether();
+        }
+    }
+
+    /// THE DESCENT — a one-way plunge into the netherealm. Regenerates the map as
+    /// hell (from the world RNG, so peers match), carries each surviving player's
+    /// army and stockpiles down to a fresh foothold, and drops the overworld.
+    fn descend_to_nether(&mut self) {
+        if self.realm == Realm::Nether {
+            return;
+        }
+        let survivors: Vec<Pid> = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.joined && !p.defeated)
+            .map(|(i, _)| i as Pid)
+            .collect();
+        // carry surviving player units (owner, kind, hp); buildings & NEUTRAL drop away
+        let mut carried: Vec<(Pid, Kind, i32)> = Vec::new();
+        for e in self.ents.iter() {
+            if e.kind.is_unit() && e.hp > 0 && survivors.contains(&e.owner) {
+                carried.push((e.owner, e.kind, e.hp));
+            }
+        }
+        // new ground + a clean slate of entities
+        self.map = crate::mapgen::nether_realm(&mut self.rng);
+        self.ents = Arena::new();
+        self.realm = Realm::Nether;
+        self.peace_until = 0;
+        let sites = self.map.spawns.clone();
+        let nsites = sites.len().max(1);
+        // a fresh ConYard per survivor at a landing site
+        for (i, &pid) in survivors.iter().enumerate() {
+            let site = sites[i % nsites];
+            let (fw, fh) = stats(Kind::ConYard).footprint;
+            let cy = self.ents.spawn(pid, Kind::ConYard, Fp { x: site.x * FX, y: site.y * FX });
+            if let Some(e) = self.ents.get_mut(cy) {
+                e.done = true;
+                e.hp = stats(Kind::ConYard).max_hp;
+            }
+            self.map.stamp_block(site, (fw, fh), cy.idx + 1);
+            if let Some(u) = self.map.spawn_used.get_mut(i % nsites) {
+                *u = pid;
+            }
+        }
+        // re-land each survivor's army around their own foothold
+        for (pid, kind, hp) in carried {
+            let idx = survivors.iter().position(|&p| p == pid).unwrap_or(0);
+            let site = sites[idx % nsites];
+            if let Some(t) = self.find_free_tile_near(site, 16) {
+                let id = self.ents.spawn(pid, kind, t.center());
+                if let Some(e) = self.ents.get_mut(id) {
+                    e.hp = hp;
+                }
+            }
+        }
+        self.push_chat(NEUTRAL, "THE DESCENT. The rift swallows the host — you stand in the netherealm now, on ash and fire, with no road home. Hunt the Balrog.".into());
     }
 
     /// A random open grass tile in the interior — where deer graze & berries grow.
@@ -1900,6 +2121,11 @@ impl World {
     }
 
     fn sys_monsters(&mut self) {
+        // The netherealm has no kind sun: no dawn-burn, and a far deadlier brood.
+        if self.realm == Realm::Nether {
+            self.sys_nether_horde();
+            return;
+        }
         let night = is_night(self.tick);
 
         // --- DAWN BURN: anything caught in open daylight cooks (Minecraft rule) ---
@@ -2415,6 +2641,7 @@ impl World {
         w.u16(SAVE_VERSION);
         w.u8(self.mode as u8);
         w.u8(self.difficulty);
+        w.u8(self.realm as u8);
         w.u32(self.tick);
         w.u32(self.peace_until);
         w.u64(self.rng.state);
@@ -2487,11 +2714,16 @@ impl World {
         if r.u32()? != SAVE_MAGIC {
             return Err(DecodeErr);
         }
-        if r.u16()? != SAVE_VERSION {
+        // accept the current format, and v11 too: a v11 save predates the
+        // netherealm, so it's simply an Overworld game (it migrates to v12 on the
+        // next save). Anything older is rejected.
+        let ver = r.u16()?;
+        if ver != SAVE_VERSION && ver != 11 {
             return Err(DecodeErr);
         }
         let mode = Mode::from_u8(r.u8()?);
         let difficulty = r.u8()?;
+        let realm = if ver >= 12 { Realm::from_u8(r.u8()?) } else { Realm::Overworld };
         let tick = r.u32()?;
         let peace_until = r.u32()?;
         let state = r.u64()?;
@@ -2573,6 +2805,7 @@ impl World {
             peace_until,
             loot,
             difficulty,
+            realm,
             events: Vec::new(),
         };
         // the block grid is derived state: rebuild it from building entities
@@ -2589,5 +2822,55 @@ impl World {
     /// World checksum for desync detection. Identical on every honest peer.
     pub fn hash(&self) -> u64 {
         fnv64(&self.save_bytes())
+    }
+}
+
+#[cfg(test)]
+mod nether_tests {
+    use super::*;
+    use crate::mapgen;
+
+    fn seeded() -> World {
+        let mut w = mapgen::verdant_divide(42, Mode::Skirmish);
+        w.step(&[(0, Command::Join { name: "Ada".into(), color: 0, key: [1; 32] })]);
+        for _ in 0..20 {
+            w.step(&[]);
+        }
+        w
+    }
+
+    // The one-way descent must be bit-deterministic (same map, same carryover on
+    // every peer) and survive a save/reload — the realm is part of world state.
+    #[test]
+    fn descent_is_deterministic_and_loadable() {
+        let mut a = seeded();
+        let mut b = seeded();
+        assert_eq!(a.hash(), b.hash(), "identical setup should match");
+        assert!(a.ents.iter().any(|e| e.kind.is_unit() && e.owner == 0), "player should have units to carry down");
+
+        a.descend_to_nether();
+        b.descend_to_nether();
+        assert_eq!(a.realm, Realm::Nether);
+        assert_eq!(a.hash(), b.hash(), "the descent itself must be deterministic");
+        assert!(a.ents.iter().any(|e| e.kind.is_unit() && e.owner == 0), "the army should have descended");
+
+        // the nether horde (and everything) runs identically tick for tick
+        for t in 0..400u32 {
+            a.step(&[]);
+            b.step(&[]);
+            assert_eq!(a.hash(), b.hash(), "nether desynced at +{t}");
+        }
+        assert!(a.ents.iter().any(|e| e.kind == Kind::Demon), "the netherealm should be spawning demons");
+
+        // save mid-nether, reload, and continue on the exact same hash
+        let snap = a.save_bytes();
+        let mut c = World::load_bytes(&snap).expect("nether save round-trips");
+        assert_eq!(c.realm, Realm::Nether, "realm must persist across save/load");
+        assert_eq!(a.hash(), c.hash(), "reloaded nether must match");
+        for _ in 0..120 {
+            a.step(&[]);
+            c.step(&[]);
+            assert_eq!(a.hash(), c.hash());
+        }
     }
 }

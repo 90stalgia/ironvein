@@ -7,7 +7,7 @@
 //!   3. The wire format is now a stable, documented thing we control (versioned below).
 
 pub const SAVE_MAGIC: u32 = 0x49565E31; // "IV^1"
-pub const SAVE_VERSION: u16 = 11; // v11: food economy (food stockpile, loot kinds, deer)
+pub const SAVE_VERSION: u16 = 12; // v12: the netherealm (one-way descent; `realm` field)
 
 #[derive(Default)]
 pub struct W {

@@ -92,6 +92,9 @@ impl Minimap {
                         Terrain::Ice => Color::new(0.58, 0.78, 0.90, 1.0),
                         Terrain::Marsh => Color::new(0.20, 0.30, 0.25, 1.0),
                         Terrain::Mountain => Color::new(0.30, 0.28, 0.40, 1.0),
+                        Terrain::Lava => Color::new(0.90, 0.40, 0.12, 1.0),
+                        Terrain::Ash => Color::new(0.20, 0.17, 0.18, 1.0),
+                        Terrain::Obsidian => Color::new(0.13, 0.09, 0.16, 1.0),
                     };
                     if w.map.ore_at(t) > 0 {
                         c = Color::new(0.85, 0.72, 0.2, 1.0);
