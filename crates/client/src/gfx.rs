@@ -1623,24 +1623,68 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             return; // no health bar — its "hp" is a lifetime
         }
         Kind::Moloch => {
-            // THE colossal horned, hoofed devil — it swells and rages as it's wounded
+            // MOLOCH — a STARSHIP-SIZED muscular red devil: horns, hooves, smoke
+            // pouring from his ears, breathing fire. He swells/reddens with rage.
             let maxhp = stats(Kind::Moloch).max_hp.max(1);
             let rage = (1.0 - e.hp.max(0) as f32 / maxhp as f32).clamp(0.0, 1.0);
-            let sc = 2.4 * (1.0 + rage * 0.7);
-            let glowc = mix(rgb(0.7, 0.25, 0.12), rgb(1.0, 0.5, 0.1), rage);
-            glow(c - vec2(0.0, 8.0 * sc), 26.0 * sc * 0.6, glowc, 0.5 + 0.4 * rage);
-            for sx in [-6.0f32, 6.0] {
-                draw_line(c.x + sx * sc, c.y, c.x + sx * sc, c.y + 10.0 * sc, 3.0 * sc, rgb(0.10, 0.05, 0.05)); // legs
-                draw_circle(c.x + sx * sc, c.y + 10.0 * sc, 2.0 * sc, rgb(0.04, 0.02, 0.02)); // hooves
+            let sc = 4.2 * (1.0 + rage * 0.6); // ~as tall as the Starship, bigger when enraged
+            let t = w.tick as f32;
+            let breathe = (t * 0.08).sin() * 0.04 * sc; // a slow, heaving chest
+            let red = mix(rgb(0.46, 0.06, 0.06), rgb(0.88, 0.10, 0.05), rage); // angrier red as he's hurt
+            let dark = rgb(0.16, 0.03, 0.03);
+            let ember = mix(rgb(0.9, 0.35, 0.1), rgb(1.0, 0.55, 0.1), rage);
+            let (cx, by) = (c.x, c.y);
+            glow(vec2(cx, by - 12.0 * sc), 22.0 * sc, ember, 0.4 + 0.4 * rage); // hellish aura
+            // legs + cloven hooves
+            for s in [-7.0f32, 7.0] {
+                draw_line(cx + s * sc, by, cx + s * sc * 1.1, by + 12.0 * sc, 4.5 * sc, dark);
+                draw_circle(cx + s * sc * 1.1, by + 12.0 * sc, 3.0 * sc, rgb(0.05, 0.02, 0.02));
             }
-            draw_rectangle(c.x - 8.0 * sc, c.y - 14.0 * sc, 16.0 * sc, 18.0 * sc, rgb(0.20, 0.06, 0.06)); // torso
-            draw_line(c.x - 6.0 * sc, c.y - 6.0 * sc, c.x + 6.0 * sc, c.y - 6.0 * sc, 1.6 * sc, glowc); // ember seam
-            draw_circle(c.x, c.y - 20.0 * sc, 5.0 * sc, rgb(0.16, 0.05, 0.05)); // head
-            draw_line(c.x - 3.5 * sc, c.y - 23.0 * sc, c.x - 9.0 * sc, c.y - 31.0 * sc, 2.4 * sc, rgb(0.12, 0.05, 0.05)); // horns
-            draw_line(c.x + 3.5 * sc, c.y - 23.0 * sc, c.x + 9.0 * sc, c.y - 31.0 * sc, 2.4 * sc, rgb(0.12, 0.05, 0.05));
-            draw_circle(c.x - 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3)); // burning eyes
-            draw_circle(c.x + 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3));
-            draw_line(c.x, c.y - 8.0 * sc, c.x + d.x * 16.0 * sc, c.y - 8.0 * sc + d.y * 16.0 * sc, 3.0 * sc, glowc); // firewhip
+            let chest_h = 22.0 * sc + breathe;
+            // muscular torso: broad chest + tapered abdomen + lit edge
+            draw_rectangle(cx - 9.5 * sc, by - chest_h, 19.0 * sc, chest_h * 0.7, red);
+            draw_rectangle(cx - 7.0 * sc, by - chest_h * 0.45, 14.0 * sc, chest_h * 0.45, shade(red, 0.8));
+            draw_rectangle(cx - 9.5 * sc, by - chest_h, 4.0 * sc, chest_h * 0.7, shade(red, 1.3));
+            // muscle definition + ember seams
+            draw_line(cx, by - chest_h, cx, by - chest_h * 0.35, 1.5 * sc, dark); // sternum
+            for ab in 1..3 {
+                let ay = by - chest_h * 0.45 + ab as f32 * 4.0 * sc;
+                draw_line(cx - 5.0 * sc, ay, cx + 5.0 * sc, ay, 1.2 * sc, dark);
+            }
+            draw_line(cx - 8.5 * sc, by - chest_h * 0.85, cx + 8.5 * sc, by - chest_h * 0.85, 1.6 * sc, ember);
+            // bulging arms + fists
+            for s in [-1.0f32, 1.0] {
+                let ax = cx + s * 9.5 * sc;
+                draw_line(ax, by - chest_h * 0.82, ax + s * 5.0 * sc, by - 3.0 * sc, 5.5 * sc, shade(red, 0.9));
+                draw_circle(ax + s * 5.0 * sc, by - 3.0 * sc, 3.8 * sc, dark);
+            }
+            // smoke pouring from the ears (drifting dark puffs)
+            let hy = by - chest_h - 7.0 * sc;
+            for s in [-1.0f32, 1.0] {
+                for p in 0..3 {
+                    let pp = ((t * 0.05) + p as f32 * 0.4 + (s + 1.0) * 0.2) % 1.0;
+                    let sx = cx + s * 6.0 * sc + (t * 0.1 + p as f32).sin() * 2.0 * sc;
+                    let sy = hy - 1.0 * sc - pp * 11.0 * sc;
+                    draw_circle(sx, sy, (1.4 + pp * 2.6) * sc, Color::new(0.14, 0.07, 0.07, (1.0 - pp) * 0.4));
+                }
+            }
+            // horned head
+            draw_circle(cx, hy, 6.0 * sc, shade(red, 0.85));
+            for s in [-1.0f32, 1.0] {
+                let (h0, h1, h2) = (vec2(cx + s * 4.0 * sc, hy - 3.0 * sc), vec2(cx + s * 9.5 * sc, hy - 9.0 * sc), vec2(cx + s * 7.0 * sc, hy - 17.0 * sc));
+                draw_line(h0.x, h0.y, h1.x, h1.y, 2.8 * sc, rgb(0.12, 0.07, 0.06));
+                draw_line(h1.x, h1.y, h2.x, h2.y, 2.0 * sc, rgb(0.10, 0.05, 0.05));
+            }
+            let eflick = 0.7 + 0.3 * (t * 0.4).sin();
+            draw_circle(cx - 2.3 * sc, hy - 0.5 * sc, 1.3 * sc, rgb(1.0, 0.85 * eflick, 0.2)); // burning eyes
+            draw_circle(cx + 2.3 * sc, hy - 0.5 * sc, 1.3 * sc, rgb(1.0, 0.85 * eflick, 0.2));
+            // BREATHING FIRE from the maw, in the facing direction
+            let flick = 0.7 + 0.5 * (t * 0.6).sin();
+            let fl = (16.0 + rage * 12.0) * sc * flick;
+            let (fx0, fy0) = (cx, hy + 4.5 * sc);
+            draw_line(fx0, fy0, fx0 + d.x * fl, fy0 + d.y * fl * 0.6, 4.5 * sc, Color::new(1.0, 0.5, 0.1, 0.8));
+            draw_line(fx0, fy0, fx0 + d.x * fl * 0.7, fy0 + d.y * fl * 0.45, 2.8 * sc, Color::new(1.0, 0.85, 0.3, 0.9));
+            draw_circle(fx0 + d.x * fl, fy0 + d.y * fl * 0.6, 2.8 * sc, Color::new(1.0, 0.7, 0.2, 0.7));
         }
         Kind::Revenant => {
             // a corrupted super-soldier: black armour over team colour, a violet aura
