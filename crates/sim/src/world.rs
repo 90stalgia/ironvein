@@ -228,6 +228,10 @@ pub struct World {
     pub difficulty: u8,
     /// Overworld until the alliance descends through the Warlock's rift (v12).
     pub realm: Realm,
+    /// Tick the descent fires once a unit reaches the portal (0 = not pending) —
+    /// a short, dread-building countdown. Ephemeral: not serialised or hashed
+    /// (it's re-armed from the portal each tick, like `events`).
+    pub descent_at: u32,
     pub events: Vec<VisEvent>,
 }
 
@@ -253,6 +257,7 @@ impl World {
             loot: Vec::new(),
             difficulty: 1,
             realm: Realm::Overworld,
+            descent_at: 0,
             events: Vec::new(),
         }
     }
@@ -1089,10 +1094,16 @@ impl World {
                                 e.cargo += take;
                                 e.face = (e.face + 1) % 16; // grinding/chopping wiggle
                                 if avail - take == 0 {
-                                    // the heart of a mined-out mountain holds Essence
-                                    if self.map.terrain_at(t) == Terrain::Mountain {
+                                    // the heart of a mined-out mountain holds Essence —
+                                    // and in the netherealm, the obsidian is rich with it
+                                    let ess = match self.map.terrain_at(t) {
+                                        Terrain::Mountain => 25,
+                                        Terrain::Obsidian => 50,
+                                        _ => 0,
+                                    };
+                                    if ess > 0 {
                                         if let Some(p) = self.players.get_mut(e.owner as usize) {
-                                            p.essence = p.essence.saturating_add(25);
+                                            p.essence = p.essence.saturating_add(ess);
                                         }
                                     }
                                     self.map.clear_resource(t); // chopped/mined out → open ground
@@ -1504,6 +1515,7 @@ impl World {
             kind: Kind,
             center: Fp,
             alive: bool,
+            aggressive: bool,
             foot_half: i32,
         }
         let infos: Vec<TInfo> = self
@@ -1515,6 +1527,7 @@ impl World {
                 kind: e.kind,
                 center: e.center(),
                 alive: e.hp > 0,
+                aggressive: e.aggressive,
                 foot_half: e.foot().0.max(e.foot().1) * FX / 2,
             })
             .collect();
@@ -1607,7 +1620,7 @@ impl World {
             }
             // acquire a target (player units/towers do; so do NEUTRAL monsters,
             // which hunt everyone — but ordinary neutrals, like the village, never)
-            if e.target.is_none() && (e.owner != NEUTRAL || e.kind.is_monster()) {
+            if e.target.is_none() && (e.owner != NEUTRAL || e.kind.is_monster() || e.aggressive) {
                 if e.scan_in > 0 {
                     e.scan_in -= 1;
                 }
@@ -1627,9 +1640,10 @@ impl World {
                         // walls & gates used to be unkillable (excluded here),
                         // which made them magic. Now they're fair game — units
                         // and towers will batter through an enemy barrier.
-                        // Ordinary neutrals (the village) are still off-limits,
-                        // but NEUTRAL *monsters* are everyone's enemy.
-                        let neutral_safe = t.owner == NEUTRAL && !t.kind.is_monster();
+                        // Ordinary neutrals (the village, drifting smoke) are still
+                        // off-limits, but NEUTRAL *monsters* — and units the essence
+                        // smoke has CORRUPTED (NEUTRAL + aggressive) — are everyone's enemy.
+                        let neutral_safe = t.owner == NEUTRAL && !t.kind.is_monster() && !t.aggressive;
                         if !t.alive || t.owner == e.owner || neutral_safe || mutual(e.owner, t.owner) {
                             continue;
                         }
@@ -1726,6 +1740,7 @@ impl World {
             // down by daylight, in sys_monsters, drops nothing — kill it yourself).
             if kind.is_monster() {
                 let ess = match kind {
+                    Kind::Moloch => 500,
                     Kind::Balrog => 300,
                     Kind::Warlock => 250,
                     Kind::Lich => 60,
@@ -1777,15 +1792,15 @@ impl World {
                     }
                 }
             }
-            // THE TRUE VICTORY: slaying the Balrog clears the netherealm at its source.
-            if kind == Kind::Balrog {
+            // THE TRUE VICTORY: felling Moloch breaks the netherealm at its source.
+            if kind == Kind::Moloch {
                 for p in self.players.iter_mut() {
                     if p.joined && !p.defeated {
-                        p.credits = p.credits.saturating_add(5000);
-                        p.essence = p.essence.saturating_add(200);
+                        p.credits = p.credits.saturating_add(8000);
+                        p.essence = p.essence.saturating_add(400);
                     }
                 }
-                self.push_chat(NEUTRAL, "THE BALROG FALLS. The netherealm's lord is slain — B-Proxima is yours, surface and deep. (+5000$, +200 essence)".into());
+                self.push_chat(NEUTRAL, "MOLOCH FALLS. The horned god of the deep is slain — B-Proxima is yours, surface and abyss. (+8000$, +400 essence)".into());
             }
             self.kill(id);
         }
@@ -1919,6 +1934,77 @@ impl World {
                 self.push_chat(NEUTRAL, "The ash splits — A BALROG strides up from the deep. Bring it down.".into());
             }
         }
+        // MOLOCH wakes in the deep — the netherealm's master, one at a time.
+        if self.tick % DAY_LEN == 0 && depth >= 5 && !self.ents.iter().any(|e| e.kind == Kind::Moloch) {
+            if let Some(t) = self.random_edge_tile().and_then(|e| self.find_free_tile_near(e, 12)) {
+                self.spawn_monster(Kind::Moloch, t);
+                self.push_chat(NEUTRAL, "THE GROUND HEAVES. MOLOCH WAKES — the horned god of the deep has marked you. Run, or end it.".into());
+            }
+        }
+        self.sys_nether_smoke();
+    }
+
+    /// Drifting essence smoke: purple clouds wander the netherealm; a unit that
+    /// touches one is CORRUPTED — it turns NEUTRAL and aggressive, hunting its old
+    /// allies. Smoke is unarmed and ignored by combat; its `hp` is a lifetime
+    /// ticked down here so clouds dissipate. Deterministic (rolls the world RNG).
+    fn sys_nether_smoke(&mut self) {
+        // spawn + replenish drifting clouds (capped)
+        let count = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke).count();
+        if self.tick % 20 == 0 && count < 10 {
+            // a random interior walkable (ash) tile — clouds drift up everywhere
+            let mut spot: Option<Tp> = None;
+            for _ in 0..12 {
+                let t = Tp::new(self.rng.range_i32(3, self.map.w - 4), self.rng.range_i32(3, self.map.h - 4));
+                if self.map.walkable(t) && self.map.blocked_by(t) == 0 {
+                    spot = Some(t);
+                    break;
+                }
+            }
+            if let Some(t) = spot {
+                let id = self.ents.spawn(NEUTRAL, Kind::EssenceSmoke, t.center());
+                if let Some(e) = self.ents.get_mut(id) {
+                    e.hp = self.rng.range_i32(260, 600); // lifetime in ticks
+                }
+            }
+        }
+        // drift each cloud a slow random step + decay; collect victims to corrupt
+        let mut corrupt: Vec<Eid> = Vec::new();
+        let smokes: Vec<(Eid, Fp)> = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke && e.hp > 0).map(|e| (e.id, e.pos)).collect();
+        for (sid, spos) in &smokes {
+            let (dx, dy) = (self.rng.range_i32(-1, 1) * (FX / 6), self.rng.range_i32(-1, 1) * (FX / 6));
+            if let Some(s) = self.ents.get_mut(*sid) {
+                s.hp -= 4;
+                s.pos.x = (s.pos.x + dx).clamp(FX, (self.map.w - 2) * FX);
+                s.pos.y = (s.pos.y + dy).clamp(FX, (self.map.h - 2) * FX);
+                if s.hp <= 0 {
+                    continue;
+                }
+            }
+            // any owned, mortal unit within ~1 tile of the cloud succumbs
+            let reach = (FX as i64 * 3 / 2) * (FX as i64 * 3 / 2);
+            for e in self.ents.iter() {
+                if e.kind.is_unit() && e.owner != NEUTRAL && e.hp > 0 && !e.kind.is_monster() && e.pos.dist2(*spos) <= reach {
+                    corrupt.push(e.id);
+                }
+            }
+        }
+        for id in corrupt {
+            if let Some(e) = self.ents.get_mut(id) {
+                let at = e.center();
+                e.owner = NEUTRAL;
+                e.aggressive = true;
+                e.target = None;
+                e.goal = None;
+                e.path.clear();
+                self.events.push(VisEvent::Captured { at }); // a purple claim
+            }
+        }
+        // reap dissipated clouds
+        let dead: Vec<Eid> = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke && e.hp <= 0).map(|e| e.id).collect();
+        for id in dead {
+            self.ents.despawn(id);
+        }
     }
 
     /// Is this footprint in-bounds and free of blocks (terrain we can flatten)?
@@ -1973,6 +2059,14 @@ impl World {
         if self.realm != Realm::Overworld {
             return;
         }
+        // the countdown is running → when it expires, the world falls
+        if self.descent_at != 0 {
+            if self.tick >= self.descent_at {
+                self.descent_at = 0;
+                self.descend_to_nether();
+            }
+            return;
+        }
         let portal = self.ents.iter().find(|e| e.kind == Kind::NetherPortal).map(|e| (e.tile(), e.foot()));
         let Some((pt, (pw, ph))) = portal else { return };
         let reached = self.ents.iter().any(|e| {
@@ -1983,7 +2077,9 @@ impl World {
             t.x >= pt.x - 1 && t.x <= pt.x + pw && t.y >= pt.y - 1 && t.y <= pt.y + ph
         });
         if reached {
-            self.descend_to_nether();
+            // arm a ~3.6 s build of dread before the world tears away
+            self.descent_at = self.tick + 36;
+            self.push_chat(NEUTRAL, "The rift seizes you — the world begins to tear away...".into());
         }
     }
 
@@ -2807,6 +2903,7 @@ impl World {
             loot,
             difficulty,
             realm,
+            descent_at: 0,
             events: Vec::new(),
         };
         // the block grid is derived state: rebuild it from building entities

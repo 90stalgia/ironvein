@@ -72,7 +72,13 @@ pub enum Kind {
     //      and the far deadlier brood waiting on the other side ----
     NetherPortal = 44, // the rift left when the Warlock falls; march a force through it
     Demon = 45,        // nether grunt: fast, heavy, and the sun can't touch it
-    Balrog = 46,       // the nether's apex — slay it for the true victory
+    Balrog = 46,       // a nether bruiser-boss
+    // drifting purple ESSENCE SMOKE: touch it and your unit turns to the dark side.
+    EssenceSmoke = 47,
+    // MOLOCH: the netherealm's true master — a colossal horned, hoofed devil the
+    // size of a starship that swells with rage as it's wounded. Slay it = the true
+    // victory.
+    Moloch = 48,
 }
 
 pub const ALL_BUILDINGS: [Kind; 22] = [
@@ -165,6 +171,8 @@ impl Kind {
             44 => Kind::NetherPortal,
             45 => Kind::Demon,
             46 => Kind::Balrog,
+            47 => Kind::EssenceSmoke,
+            48 => Kind::Moloch,
             _ => return None,
         })
     }
@@ -190,11 +198,11 @@ impl Kind {
     /// A supernatural night-creature: NEUTRAL-owned, hostile to every nation,
     /// and burns in daylight unless it finds shade.
     pub fn is_monster(self) -> bool {
-        matches!(self, Kind::Zombie | Kind::Werewolf | Kind::Vampire | Kind::Lich | Kind::Warlock | Kind::HellTank | Kind::Demon | Kind::Balrog)
+        matches!(self, Kind::Zombie | Kind::Werewolf | Kind::Vampire | Kind::Lich | Kind::Warlock | Kind::HellTank | Kind::Demon | Kind::Balrog | Kind::Moloch)
     }
     /// A named boss — far tougher, burns only slowly, worth a bounty.
     pub fn is_boss(self) -> bool {
-        matches!(self, Kind::Lich | Kind::Warlock | Kind::Balrog)
+        matches!(self, Kind::Lich | Kind::Warlock | Kind::Balrog | Kind::Moloch)
     }
     /// Too vast or too mechanical to hide from the dawn: only smoulders in
     /// daylight (bosses and the animated war-hulks) instead of flashing to ash.
@@ -311,8 +319,14 @@ pub fn stats(k: Kind) -> Stats {
         NetherPortal => s("Nether Portal", 8000, 0, 0, 0, 0, 0, 0, 6, 0, (2, 2), None),
         // nether grunt: faster and far tougher than a werewolf, and the sun can't touch it
         Demon => s("Demon", 300, 0, 0, 38, 36, 1, 7, 11, 0, (1, 1), None),
-        // the nether's apex: tougher than the Warlock, a long-reaching firewhip
+        // a nether bruiser-boss: tough, a long-reaching firewhip
         Balrog => s("Balrog", 9000, 0, 0, 17, 88, 6, 7, 18, 0, (1, 1), None),
+        // drifting essence cloud: harmless in combat (NEUTRAL, unarmed) — the danger
+        // is touching it. `hp` doubles as its lifetime, ticked down in sys_nether_smoke.
+        EssenceSmoke => s("Essence Smoke", 600, 0, 0, 0, 0, 0, 0, 4, 0, (1, 1), None),
+        // MOLOCH — the netherealm's master, a colossal devil. Vast HP; it swells and
+        // rages as it's wounded (the gfx grows with lost HP). Slay it = true victory.
+        Moloch => s("Moloch", 26000, 0, 0, 14, 120, 7, 6, 22, 0, (1, 1), None),
         // tier-3 hero: a one-soldier army (Essence-gated, built at the Factory)
         Champion => s("Champion", 1700, 1800, 280, 30, 52, 4, 6, 12, 0, (1, 1), Some(Factory)),
         // capstone: a corrupted war machine the wounded Warlock animates — heavy,
@@ -437,6 +451,7 @@ pub fn dmg_pct(attacker: Kind, target: Kind) -> i32 {
             | Kind::Starship
             | Kind::TeslaCoil
             | Kind::Balrog
+            | Kind::Moloch
     );
     match (rocket, target.is_infantry(), target.is_building()) {
         (true, true, _) => 60,    // explosives vs infantry: meh

@@ -326,10 +326,27 @@ fn draw_tile(w: &World, t: Tp, cam: Vec2, tick: u32) {
             diamond(c, base);
             ground_texture(c, t, base, terr);
             tile_edges(w, t, c);
+            let nether = matches!(w.realm, ironvein_sim::world::Realm::Nether);
             if matches!(terr, Terrain::Tree) {
-                draw_tree(c, t, base);
+                if nether {
+                    draw_nether_plant(c, t);
+                } else {
+                    draw_tree(c, t, base);
+                }
             } else if matches!(terr, Terrain::Rock) {
                 draw_rock(c, t, base);
+            } else if matches!(terr, Terrain::Obsidian) {
+                // jagged black-glass spires
+                draw_rock(c, t, shade(base, 0.8));
+                draw_triangle(c + vec2(-4.0, 2.0), c + vec2(0.0, -16.0), c + vec2(4.0, 2.0), rgb(0.10, 0.06, 0.14));
+                draw_line(c.x, c.y - 14.0, c.x - 1.5, c.y + 1.0, 1.0, rgb(0.40, 0.22, 0.52)); // a violet glint
+            } else if matches!(terr, Terrain::Lava) {
+                // molten glow with a few bubbling embers
+                let g = 0.5 + 0.5 * ((tick as f32 * 0.07) + (t.x * 3 + t.y * 5) as f32).sin();
+                draw_circle(c.x, c.y, 7.0, Color::new(1.0, 0.55, 0.15, 0.18 + 0.16 * g));
+                if tile_noise(t.x, t.y, 11) % 3 == 0 {
+                    draw_circle(c.x + (tile_noise(t.x, t.y, 12) % 7) as f32 - 3.0, c.y - 1.0, 1.4, rgb(1.0, 0.85, 0.4));
+                }
             } else if matches!(terr, Terrain::Mountain) {
                 // a mountain reads as a taller rock with a snow cap
                 draw_rock(c, t, shade(base, 0.9));
@@ -468,6 +485,28 @@ fn draw_tree(c: Vec2, t: Tp, ground: Color) {
     draw_circle(bx - r * 0.35, cy - r * 0.35, r * 0.5, rgb(0.15, 0.48, 0.40));
     draw_circle(bx - r * 0.45, cy - r * 0.45, r * 0.22, rgb(0.30, 0.62, 0.52));
     draw_circle(bx + r * 0.5, cy + r * 0.25, r * 0.4, rgb(0.08, 0.26, 0.10));
+}
+
+/// A netherealm "plant" in place of the teal alien trees: a charred, clawed husk
+/// with bare jagged limbs and a sick ember/violet glow at its heart.
+fn draw_nether_plant(c: Vec2, t: Tp) {
+    let jitter = (tile_noise(t.x, t.y, 3) % 5) as f32 - 2.0;
+    let bx = c.x + jitter;
+    draw_circle(bx + 5.0, c.y + 3.0, 6.0, Color::new(0.0, 0.0, 0.0, 0.22)); // shadow
+    let trunk_top = c.y - 14.0;
+    draw_rectangle(bx - 2.0, trunk_top, 4.0, 18.0, rgb(0.12, 0.07, 0.08)); // charred trunk
+    draw_rectangle(bx - 2.0, trunk_top, 1.4, 18.0, rgb(0.22, 0.10, 0.10));
+    // bare clawed limbs reaching up, with a slight per-tile twist
+    let tw = ((tile_noise(t.x, t.y, 4) % 5) as f32 - 2.0) * 0.4;
+    for (sx, up) in [(-1.0f32, -9.0f32), (1.0, -11.0), (-0.5, -14.0), (0.6, -13.0)] {
+        let ex = bx + sx * 7.0 + tw;
+        let ey = trunk_top + up;
+        draw_line(bx, trunk_top + 2.0, ex, ey, 1.6, rgb(0.14, 0.08, 0.09));
+        draw_line(ex, ey, ex + sx * 3.0, ey - 3.0, 1.2, rgb(0.10, 0.06, 0.07)); // a clawed tip
+    }
+    // an ember/violet glow caught in the heartwood
+    draw_circle(bx, trunk_top + 6.0, 2.4, Color::new(0.55, 0.18, 0.55, 0.55));
+    draw_circle(bx, trunk_top + 6.0, 1.2, rgb(0.9, 0.4, 0.5));
 }
 
 fn draw_rock(c: Vec2, t: Tp, base: Color) {
@@ -1479,6 +1518,37 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             draw_circle(c.x + 1.3, c.y - 11.0, 0.9, rgb(1.0, 0.85, 0.3));
             draw_line(c.x, c.y, c.x + d.x * 18.0, c.y + d.y * 18.0, 2.4, rgb(1.0, 0.5, 0.15)); // firewhip
             draw_circle(c.x + d.x * 18.0, c.y + d.y * 18.0, 2.0, rgb(1.0, 0.82, 0.3));
+        }
+        Kind::EssenceSmoke => {
+            // a drifting violet cloud — touch it and a unit turns to the dark side
+            let wob = (w.tick as f32 * 0.08 + (e.pos.x + e.pos.y) as f32).sin();
+            for k in 0..5 {
+                let a = 0.12 + 0.05 * k as f32;
+                let r = (11.0 - k as f32 * 1.4 + wob * 1.5).max(2.0);
+                draw_circle(c.x + (k as f32 - 2.0) * 2.2, c.y - 4.0 - k as f32 * 1.5, r, Color::new(0.52, 0.18, 0.7, a));
+            }
+            draw_circle(c.x, c.y - 6.0, 2.0, Color::new(0.82, 0.42, 1.0, 0.55)); // bright core
+            return; // no health bar — its "hp" is a lifetime
+        }
+        Kind::Moloch => {
+            // THE colossal horned, hoofed devil — it swells and rages as it's wounded
+            let maxhp = stats(Kind::Moloch).max_hp.max(1);
+            let rage = (1.0 - e.hp.max(0) as f32 / maxhp as f32).clamp(0.0, 1.0);
+            let sc = 2.4 * (1.0 + rage * 0.7);
+            let glowc = mix(rgb(0.7, 0.25, 0.12), rgb(1.0, 0.5, 0.1), rage);
+            glow(c - vec2(0.0, 8.0 * sc), 26.0 * sc * 0.6, glowc, 0.5 + 0.4 * rage);
+            for sx in [-6.0f32, 6.0] {
+                draw_line(c.x + sx * sc, c.y, c.x + sx * sc, c.y + 10.0 * sc, 3.0 * sc, rgb(0.10, 0.05, 0.05)); // legs
+                draw_circle(c.x + sx * sc, c.y + 10.0 * sc, 2.0 * sc, rgb(0.04, 0.02, 0.02)); // hooves
+            }
+            draw_rectangle(c.x - 8.0 * sc, c.y - 14.0 * sc, 16.0 * sc, 18.0 * sc, rgb(0.20, 0.06, 0.06)); // torso
+            draw_line(c.x - 6.0 * sc, c.y - 6.0 * sc, c.x + 6.0 * sc, c.y - 6.0 * sc, 1.6 * sc, glowc); // ember seam
+            draw_circle(c.x, c.y - 20.0 * sc, 5.0 * sc, rgb(0.16, 0.05, 0.05)); // head
+            draw_line(c.x - 3.5 * sc, c.y - 23.0 * sc, c.x - 9.0 * sc, c.y - 31.0 * sc, 2.4 * sc, rgb(0.12, 0.05, 0.05)); // horns
+            draw_line(c.x + 3.5 * sc, c.y - 23.0 * sc, c.x + 9.0 * sc, c.y - 31.0 * sc, 2.4 * sc, rgb(0.12, 0.05, 0.05));
+            draw_circle(c.x - 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3)); // burning eyes
+            draw_circle(c.x + 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3));
+            draw_line(c.x, c.y - 8.0 * sc, c.x + d.x * 16.0 * sc, c.y - 8.0 * sc + d.y * 16.0 * sc, 3.0 * sc, glowc); // firewhip
         }
         _ => {
             draw_circle(c.x, c.y, 5.0, col);

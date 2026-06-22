@@ -1205,8 +1205,11 @@ async fn main() {
         audio::update();
         // browser: once the stems finish downloading, upgrade master → adaptive
         audio::poll_adaptive();
-        // in the netherealm a dedicated haunting bed takes over (stems duck out)
-        audio::set_nether(matches!(app.session.world.realm, ironvein_sim::world::Realm::Nether));
+        // in the netherealm a dedicated haunting bed takes over (stems duck out) —
+        // and it starts swelling DURING the descent build-up, before the world flips
+        audio::set_nether(
+            matches!(app.session.world.realm, ironvein_sim::world::Realm::Nether) || app.session.world.descent_at != 0,
+        );
         // ride the adaptive soundtrack on how dangerous things feel right now
         if audio::adaptive_music() {
             audio::set_music_intensity(app.music_intensity());
@@ -1407,6 +1410,11 @@ async fn main() {
         // screen shake / flash decay (frame-rate independent)
         app.shake = (app.shake - dt as f32 * 1.7).max(0.0);
         app.flash = (app.flash - dt as f32 * 2.4).max(0.0);
+        // the descent build-up: a tremor that rises as the rift takes hold
+        if app.session.world.descent_at != 0 {
+            let togo = app.session.world.descent_at.saturating_sub(app.session.world.tick) as f32;
+            app.shake = app.shake.max((1.0 - togo / 36.0).clamp(0.0, 1.0) * 0.85);
+        }
 
         draw(&mut app);
 
@@ -1989,6 +1997,21 @@ fn draw(app: &mut App) {
     // nuke detonation white-out, fading fast over the whole viewport
     if app.flash > 0.0 {
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(1.0, 0.97, 0.9, (app.flash * 0.55).min(0.7)));
+    }
+
+    // THE DESCENT: as the rift drags the world under, a violet dark swells and
+    // closes in — accelerating to near-black at the moment it tears away.
+    {
+        let wld = &app.session.world;
+        if wld.descent_at != 0 && matches!(wld.realm, ironvein_sim::world::Realm::Overworld) {
+            let togo = wld.descent_at.saturating_sub(wld.tick) as f32;
+            let p = (1.0 - togo / 36.0).clamp(0.0, 1.0);
+            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.10, 0.0, 0.14, 0.78 * p * p)); // violet wash
+            // a closing vignette: dark bands creeping in from the edges
+            let band = (sh * 0.5) * p * p;
+            draw_rectangle(0.0, 0.0, sw, band, Color::new(0.02, 0.0, 0.04, 0.9 * p));
+            draw_rectangle(0.0, sh - band, sw, band, Color::new(0.02, 0.0, 0.04, 0.9 * p));
+        }
     }
 
     // ---- UI overlays, drawn crisp at native resolution ----
