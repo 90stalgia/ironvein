@@ -269,6 +269,9 @@ struct App {
     /// render interpolation anchors, keyed by (slot index, generation) so a
     /// reused arena slot can't inherit the dead occupant's position
     lerp: HashMap<(u32, u32), (Fp, Fp)>,
+    /// have we already handled the one-way descent (the whole entity arena is
+    /// replaced, so interpolation anchors + selection must be reset once)?
+    nether_seen: bool,
     fx: Vec<gfx::Effect>,
     help: bool,
     units_tab: bool,
@@ -407,6 +410,16 @@ impl App {
     }
 
     fn after_ticks(&mut self) {
+        // The one-way descent replaces the entire entity arena in a single tick, so
+        // reused slots would inherit dead overworld occupants' interpolation anchors
+        // (units flashing across the map). Reset anchors + the dangling selection the
+        // moment we land in the nether — before the anchors below are rebuilt clean.
+        if !self.nether_seen && matches!(self.session.world.realm, ironvein_sim::world::Realm::Nether) {
+            self.nether_seen = true;
+            self.lerp.clear();
+            self.sel.clear();
+            self.fx.clear();
+        }
         // shift interpolation anchors
         let mut seen: Vec<(u32, u32)> = Vec::with_capacity(64);
         for e in self.session.world.ents.iter() {
@@ -1154,6 +1167,7 @@ async fn main() {
         chat: None,
         groups: vec![Vec::new(); 10],
         lerp: HashMap::new(),
+        nether_seen: false,
         fx: Vec::new(),
         help: false,
         units_tab: false,
@@ -1207,6 +1221,7 @@ async fn main() {
         audio::poll_adaptive();
         // in the netherealm a dedicated haunting bed takes over (stems duck out) —
         // and it starts swelling DURING the descent build-up, before the world flips
+        // (the descent's stale-anchor reset is handled in `after_ticks`).
         audio::set_nether(
             matches!(app.session.world.realm, ironvein_sim::world::Realm::Nether) || app.session.world.descent_at != 0,
         );
