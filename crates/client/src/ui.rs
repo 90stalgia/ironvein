@@ -11,10 +11,11 @@ use macroquad::prelude::*;
 pub const SIDEBAR_W: f32 = 176.0;
 const MINI: f32 = 160.0;
 
-pub const BUILD_TAB: [Kind; 26] = [
+pub const BUILD_TAB: [Kind; 27] = [
     Kind::EssenceReactor,
     Kind::HellCannon,
     Kind::SoulAltar,
+    Kind::RiftAltar,
     Kind::PowerPlant,
     Kind::Reactor,
     Kind::Refinery,

@@ -85,9 +85,12 @@ pub enum Kind {
     EssenceReactor = 50, // burns Essence for vast power (+600)
     SoulAltar = 51,     // COMMAND THE DARK: seizes nearby monsters to your side
     Revenant = 52,      // a corrupted super-soldier you raise from the dark
+    // THE WAY HOME: a stone altar; ring it with 5 Tesla Coils in the nether and it
+    // charges, then tears open the gate back to the overworld (base + spoils).
+    RiftAltar = 53,
 }
 
-pub const ALL_BUILDINGS: [Kind; 25] = [
+pub const ALL_BUILDINGS: [Kind; 26] = [
     Kind::ConYard,
     Kind::PowerPlant,
     Kind::Refinery,
@@ -113,6 +116,7 @@ pub const ALL_BUILDINGS: [Kind; 25] = [
     Kind::HellCannon,
     Kind::EssenceReactor,
     Kind::SoulAltar,
+    Kind::RiftAltar,
 ];
 
 pub const ALL_UNITS: [Kind; 12] = [
@@ -186,13 +190,14 @@ impl Kind {
             50 => Kind::EssenceReactor,
             51 => Kind::SoulAltar,
             52 => Kind::Revenant,
+            53 => Kind::RiftAltar,
             _ => return None,
         })
     }
     pub fn is_building(self) -> bool {
         // buildings are 0..20, plus a few that sit above the unit/monster range
         // (the tier-3 Obelisk, the Starship landing craft, the Missile Silo)
-        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo | Kind::TeslaCoil | Kind::NetherPortal | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar)
+        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo | Kind::TeslaCoil | Kind::NetherPortal | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar | Kind::RiftAltar)
     }
     pub fn is_unit(self) -> bool {
         !self.is_building()
@@ -244,7 +249,7 @@ pub fn income_of(k: Kind) -> u32 {
 pub fn requires(k: Kind) -> Option<Kind> {
     match k {
         Kind::MissileTurret | Kind::Sniper | Kind::Artillery | Kind::HeavyTank | Kind::Obelisk | Kind::Champion | Kind::MissileSilo | Kind::TeslaCoil
-        | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar | Kind::Revenant => Some(Kind::TechCenter),
+        | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar | Kind::Revenant | Kind::RiftAltar => Some(Kind::TechCenter),
         _ => None,
     }
 }
@@ -259,6 +264,7 @@ pub fn essence_cost(k: Kind) -> u32 {
         Kind::EssenceReactor => 180,
         Kind::Revenant => 175,
         Kind::Champion => 150,
+        Kind::RiftAltar => 150,
         _ => 0,
     }
 }
@@ -354,6 +360,8 @@ pub fn stats(k: Kind) -> Stats {
         SoulAltar => s("Soul Altar", 800, 1500, 220, 0, 0, 0, 0, 9, -60, (2, 2), None),
         // a corrupted super-soldier raised from the dark — fast, brutal, tough
         Revenant => s("Revenant", 650, 700, 150, 28, 62, 4, 6, 10, 0, (1, 1), Some(Barracks)),
+        // the way home: a stone altar (ring it with 5 Tesla Coils to charge it)
+        RiftAltar => s("Rift Altar", 800, 1200, 200, 0, 0, 0, 0, 9, -40, (2, 2), None),
         // tier-3 hero: a one-soldier army (Essence-gated, built at the Factory)
         Champion => s("Champion", 1700, 1800, 280, 30, 52, 4, 6, 12, 0, (1, 1), Some(Factory)),
         // capstone: a corrupted war machine the wounded Warlock animates — heavy,
@@ -413,6 +421,7 @@ pub fn wood_cost(k: Kind) -> u32 {
         TeslaCoil => 30,
         EssenceReactor => 60,
         SoulAltar => 50,
+        RiftAltar => 50,
         Revenant => 20,
         // units: handles, stocks, crates
         Harvester => 30,
@@ -434,6 +443,7 @@ pub fn stone_cost(k: Kind) -> u32 {
         HellCannon => 140,
         TechCenter => 120,
         SoulAltar => 100,
+        RiftAltar => 100,
         Factory => 100,
         EssenceReactor => 90,
         MissileTurret => 90,

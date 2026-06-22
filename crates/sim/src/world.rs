@@ -232,6 +232,10 @@ pub struct World {
     /// a short, dread-building countdown. Ephemeral: not serialised or hashed
     /// (it's re-armed from the portal each tick, like `events`).
     pub descent_at: u32,
+    /// The overworld, snapshotted (its own `save_bytes`) at the moment of descent —
+    /// the way home. Empty in the overworld; carried in the nether so a Rift Altar
+    /// can restore it. Part of world state (save v13), so it survives nether saves.
+    pub return_snapshot: Vec<u8>,
     pub events: Vec<VisEvent>,
 }
 
@@ -258,6 +262,7 @@ impl World {
             difficulty: 1,
             realm: Realm::Overworld,
             descent_at: 0,
+            return_snapshot: Vec::new(),
             events: Vec::new(),
         }
     }
@@ -337,6 +342,7 @@ impl World {
         self.sys_support();
         self.sys_dominion();
         self.sys_portal();
+        self.sys_rift();
         self.sys_recompute();
         if self.tick % 2 == 0 {
             self.sys_fog();
@@ -2085,6 +2091,92 @@ impl World {
         }
     }
 
+    /// THE WAY HOME: a Rift Altar ringed by 5+ Tesla Coils (in the nether) charges,
+    /// then tears the gate open and restores the overworld you left — with your
+    /// spoils and surviving army. Deterministic.
+    fn sys_rift(&mut self) {
+        if self.realm != Realm::Nether || self.return_snapshot.is_empty() {
+            return;
+        }
+        const RIFT_CHARGE: u16 = 360; // ~36 s once the circle is closed
+        let altars: Vec<(Eid, Fp)> = self.ents.iter().filter(|e| e.kind == Kind::RiftAltar && e.done && e.hp > 0).map(|e| (e.id, e.center())).collect();
+        let radius2 = (7 * FX as i64) * (7 * FX as i64);
+        let mut go = false;
+        for (aid, ac) in altars {
+            let coils = self.ents.iter().filter(|e| e.kind == Kind::TeslaCoil && e.done && e.hp > 0 && e.center().dist2(ac) <= radius2).count();
+            let ringed = coils >= 5;
+            let mut just_closed = false;
+            if let Some(a) = self.ents.get_mut(aid) {
+                if ringed {
+                    just_closed = a.work_t == 0;
+                    a.work_t = a.work_t.saturating_add(1);
+                    if a.work_t >= RIFT_CHARGE {
+                        go = true;
+                    }
+                } else if a.work_t > 0 {
+                    a.work_t = a.work_t.saturating_sub(2); // ring broken: the charge bleeds away
+                }
+            }
+            if just_closed {
+                self.events.push(VisEvent::Captured { at: ac });
+                self.push_chat(NEUTRAL, "The circle is closed — the Rift Altar wakes. Hold the ring while it charges.".into());
+            }
+            if go {
+                break;
+            }
+        }
+        if go {
+            self.return_to_overworld();
+        }
+    }
+
+    /// Restore the overworld snapshot taken at descent, then fold in this raid's
+    /// spoils (Essence/credits/stockpiles) and land the surviving nether army by
+    /// each player's base. Becomes the overworld.
+    fn return_to_overworld(&mut self) {
+        let snap = std::mem::take(&mut self.return_snapshot);
+        let Ok(mut restored) = World::load_bytes(&snap) else {
+            self.return_snapshot = snap;
+            return;
+        };
+        // the raid's spoils: bring home exactly what you're carrying
+        for (pid, p) in self.players.iter().enumerate() {
+            if let Some(rp) = restored.players.get_mut(pid) {
+                rp.essence = p.essence;
+                rp.credits = p.credits;
+                rp.wood = p.wood;
+                rp.stone = p.stone;
+                rp.food = p.food;
+            }
+        }
+        // carry the surviving army home, landed near each player's base
+        let army: Vec<(Pid, Kind, i32)> = self
+            .ents
+            .iter()
+            .filter(|e| e.kind.is_unit() && e.owner != NEUTRAL && e.hp > 0 && !e.kind.is_monster())
+            .map(|e| (e.owner, e.kind, e.hp))
+            .collect();
+        for (pid, kind, hp) in army {
+            let anchor = restored
+                .ents
+                .iter()
+                .find(|e| e.owner == pid && e.kind.is_building())
+                .map(|e| e.tile())
+                .or_else(|| restored.map.spawns.first().copied())
+                .unwrap_or(Tp::new(16, 16));
+            if let Some(t) = restored.find_free_tile_near(anchor, 18) {
+                let id = restored.ents.spawn(pid, kind, t.center());
+                if let Some(e) = restored.ents.get_mut(id) {
+                    e.hp = hp;
+                }
+            }
+        }
+        restored.realm = Realm::Overworld;
+        restored.return_snapshot = Vec::new();
+        restored.push_chat(NEUTRAL, "THE GATE OPENS. You claw back to the overworld — your colony stands as you left it, and the spoils of the deep come home with you.".into());
+        *self = restored;
+    }
+
     /// Is this footprint in-bounds and free of blocks (terrain we can flatten)?
     fn footprint_open(&self, at: Tp, foot: (i32, i32)) -> bool {
         for dy in 0..foot.1 {
@@ -2168,6 +2260,9 @@ impl World {
         if self.realm == Realm::Nether {
             return;
         }
+        // snapshot the overworld first — the way home, carried in the nether so a
+        // Rift Altar can restore it (the blob is empty here, so no nesting).
+        self.return_snapshot = self.save_bytes();
         let survivors: Vec<Pid> = self
             .players
             .iter()
@@ -2881,6 +2976,8 @@ impl World {
             w.u8(m.kind);
             w.u32(m.born);
         }
+        // the overworld snapshot (the way home) — empty unless we're in the nether
+        w.bytes(&self.return_snapshot);
         w.buf
     }
 
@@ -2893,7 +2990,7 @@ impl World {
         // netherealm, so it's simply an Overworld game (it migrates to v12 on the
         // next save). Anything older is rejected.
         let ver = r.u16()?;
-        if ver != SAVE_VERSION && ver != 11 {
+        if ver < 11 || ver > SAVE_VERSION {
             return Err(DecodeErr);
         }
         let mode = Mode::from_u8(r.u8()?);
@@ -2969,6 +3066,7 @@ impl World {
             let born = r.u32()?;
             loot.push(Loot { tile: Tp::new(x, y), amount, kind, born });
         }
+        let return_snapshot = if ver >= 13 { r.bytes()? } else { Vec::new() };
         let mut world = World {
             tick,
             mode,
@@ -2982,6 +3080,7 @@ impl World {
             difficulty,
             realm,
             descent_at: 0,
+            return_snapshot,
             events: Vec::new(),
         };
         // the block grid is derived state: rebuild it from building entities
@@ -3044,6 +3143,40 @@ mod nether_tests {
         assert_eq!(c.realm, Realm::Nether, "realm must persist across save/load");
         assert_eq!(a.hash(), c.hash(), "reloaded nether must match");
         for _ in 0..120 {
+            a.step(&[]);
+            c.step(&[]);
+            assert_eq!(a.hash(), c.hash());
+        }
+    }
+
+    // The way home: descend, then restore the overworld — spoils carried, and the
+    // whole round-trip bit-deterministic + save/loadable (the v13 snapshot blob).
+    #[test]
+    fn round_trip_to_overworld_is_deterministic() {
+        let mut a = seeded();
+        let mut b = seeded();
+        a.descend_to_nether();
+        b.descend_to_nether();
+        assert!(!a.return_snapshot.is_empty(), "descent must snapshot the overworld");
+        // a raid spoil to verify it comes home
+        a.players[0].essence = 999;
+        b.players[0].essence = 999;
+        a.return_to_overworld();
+        b.return_to_overworld();
+        assert_eq!(a.realm, Realm::Overworld, "we're home");
+        assert!(a.return_snapshot.is_empty(), "snapshot is consumed on return");
+        assert_eq!(a.players[0].essence, 999, "the spoils came home");
+        assert!(a.ents.iter().any(|e| e.kind.is_building() && e.owner == 0), "the overworld base was restored");
+        assert_eq!(a.hash(), b.hash(), "the return must be deterministic");
+        for _ in 0..120 {
+            a.step(&[]);
+            b.step(&[]);
+            assert_eq!(a.hash(), b.hash());
+        }
+        let snap = a.save_bytes();
+        let mut c = World::load_bytes(&snap).expect("round-trip save loads");
+        assert_eq!(a.hash(), c.hash());
+        for _ in 0..60 {
             a.step(&[]);
             c.step(&[]);
             assert_eq!(a.hash(), c.hash());

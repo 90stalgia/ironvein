@@ -269,8 +269,8 @@ struct App {
     /// render interpolation anchors, keyed by (slot index, generation) so a
     /// reused arena slot can't inherit the dead occupant's position
     lerp: HashMap<(u32, u32), (Fp, Fp)>,
-    /// have we already handled the one-way descent (the whole entity arena is
-    /// replaced, so interpolation anchors + selection must be reset once)?
+    /// last-seen realm (in the nether?) — a realm change replaces the whole entity
+    /// arena, so we reset interpolation anchors + selection when it flips.
     nether_seen: bool,
     fx: Vec<gfx::Effect>,
     help: bool,
@@ -410,12 +410,13 @@ impl App {
     }
 
     fn after_ticks(&mut self) {
-        // The one-way descent replaces the entire entity arena in a single tick, so
-        // reused slots would inherit dead overworld occupants' interpolation anchors
-        // (units flashing across the map). Reset anchors + the dangling selection the
-        // moment we land in the nether — before the anchors below are rebuilt clean.
-        if !self.nether_seen && matches!(self.session.world.realm, ironvein_sim::world::Realm::Nether) {
-            self.nether_seen = true;
+        // Crossing realms (the descent, or the Rift Altar home) replaces the entire
+        // entity arena in one tick, so reused slots would inherit the dead occupants'
+        // interpolation anchors (units flashing across the map). On any realm change,
+        // reset anchors + the now-dangling selection before the anchors are rebuilt.
+        let in_nether = matches!(self.session.world.realm, ironvein_sim::world::Realm::Nether);
+        if in_nether != self.nether_seen {
+            self.nether_seen = in_nether;
             self.lerp.clear();
             self.sel.clear();
             self.fx.clear();

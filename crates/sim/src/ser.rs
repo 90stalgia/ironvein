@@ -7,7 +7,7 @@
 //!   3. The wire format is now a stable, documented thing we control (versioned below).
 
 pub const SAVE_MAGIC: u32 = 0x49565E31; // "IV^1"
-pub const SAVE_VERSION: u16 = 12; // v12: the netherealm (one-way descent; `realm` field)
+pub const SAVE_VERSION: u16 = 13; // v13: the way home (overworld `return_snapshot` blob)
 
 #[derive(Default)]
 pub struct W {

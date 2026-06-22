@@ -1294,6 +1294,26 @@ fn draw_iso_building(w: &World, e: &ironvein_sim::Ent, cam: Vec2, col: Color, se
             glow(topp, 12.0, rgb(0.7, 0.3, 1.0), 0.4 + 0.4 * pulse);
             topp
         }
+        // -- the Rift Altar: a pale stone altar; a cyan "home" charge-ring fills as
+        //    it powers up (ring it with 5 Tesla Coils to charge it) -------------
+        Kind::RiftAltar => {
+            let cg = (bn + be + bs + bw) * 0.25;
+            cylinder(cg.x, cg.y + 2.0, 6.0, 9.0, 4.5, rgb(0.42, 0.40, 0.46)); // stone base
+            draw_rectangle(cg.x - 5.0, cg.y - 8.0, 10.0, 8.0, rgb(0.50, 0.48, 0.54)); // plinth
+            let charge = (e.work_t as f32 / 360.0).clamp(0.0, 1.0);
+            draw_circle_lines(cg.x, cg.y - 6.0, 12.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.4));
+            if charge > 0.0 {
+                let seg = (charge * 28.0) as i32;
+                for k in 0..seg {
+                    let a = k as f32 / 28.0 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+                    draw_circle(cg.x + a.cos() * 12.0, cg.y - 6.0 + a.sin() * 6.0, 1.5, rgb(0.4, 0.8, 1.0));
+                }
+                let top = vec2(cg.x, cg.y - 8.0 - charge * 22.0);
+                draw_line(cg.x, cg.y - 6.0, top.x, top.y, 2.0 + charge * 2.0, Color::new(0.5, 0.85, 1.0, 0.4 + 0.5 * charge));
+                glow(top, 10.0 + charge * 10.0, rgb(0.5, 0.85, 1.0), 0.4 + 0.5 * charge);
+            }
+            cg - vec2(0.0, 10.0)
+        }
         _ => {
             let r = iso_box(bn, be, bs, bw, bld_height(fw, fh), rgb(0.4, 0.4, 0.43));
             (r[0] + r[1] + r[2] + r[3]) * 0.25
