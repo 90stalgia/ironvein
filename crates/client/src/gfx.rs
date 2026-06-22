@@ -1585,19 +1585,20 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             draw_line(c.x - 4.0, c.y + 0.5, c.x - 7.0, c.y - 1.0, 1.2, fur); // tail tuft
         }
         Kind::Demon => {
-            // nether grunt: a hunched, ember-lit brute with horns and burning eyes
-            glow(c, 9.0, rgb(0.9, 0.3, 0.1), 0.4);
-            draw_rectangle(c.x - 3.5, c.y - 4.0, 7.0, 9.0, rgb(0.42, 0.10, 0.10)); // torso
-            draw_rectangle(c.x - 3.5, c.y - 4.0, 2.5, 9.0, rgb(0.56, 0.16, 0.12)); // lit edge
-            draw_circle(c.x, c.y - 6.0, 2.6, rgb(0.30, 0.07, 0.07)); // head
-            draw_line(c.x - 2.0, c.y - 7.5, c.x - 3.6, c.y - 10.2, 1.2, rgb(0.14, 0.05, 0.05)); // horns
-            draw_line(c.x + 2.0, c.y - 7.5, c.x + 3.6, c.y - 10.2, 1.2, rgb(0.14, 0.05, 0.05));
-            draw_circle(c.x - 1.0, c.y - 6.0, 0.7, rgb(1.0, 0.72, 0.2)); // eyes
-            draw_circle(c.x + 1.0, c.y - 6.0, 0.7, rgb(1.0, 0.72, 0.2));
+            // nether grunt: a hunched, ember-lit brute — ~2x a soldier
+            let sc = 1.9;
+            glow(c, 9.0 * sc, rgb(0.9, 0.3, 0.1), 0.4);
+            draw_rectangle(c.x - 3.5 * sc, c.y - 4.0 * sc, 7.0 * sc, 9.0 * sc, rgb(0.42, 0.10, 0.10)); // torso
+            draw_rectangle(c.x - 3.5 * sc, c.y - 4.0 * sc, 2.5 * sc, 9.0 * sc, rgb(0.56, 0.16, 0.12)); // lit edge
+            draw_circle(c.x, c.y - 6.0 * sc, 2.6 * sc, rgb(0.30, 0.07, 0.07)); // head
+            draw_line(c.x - 2.0 * sc, c.y - 7.5 * sc, c.x - 3.6 * sc, c.y - 10.2 * sc, 1.2 * sc, rgb(0.14, 0.05, 0.05)); // horns
+            draw_line(c.x + 2.0 * sc, c.y - 7.5 * sc, c.x + 3.6 * sc, c.y - 10.2 * sc, 1.2 * sc, rgb(0.14, 0.05, 0.05));
+            draw_circle(c.x - 1.0 * sc, c.y - 6.0 * sc, 0.7 * sc, rgb(1.0, 0.72, 0.2)); // eyes
+            draw_circle(c.x + 1.0 * sc, c.y - 6.0 * sc, 0.7 * sc, rgb(1.0, 0.72, 0.2));
         }
         Kind::Balrog => {
-            // a towering fire-wreathed bruiser with a firewhip — big, but no Moloch
-            let sc = 2.2;
+            // a towering fire-wreathed bruiser with a firewhip — ~2x a grunt, no Moloch
+            let sc = 3.2;
             glow(c - vec2(0.0, 6.0 * sc), 18.0 * sc, rgb(1.0, 0.4, 0.1), 0.55);
             draw_triangle(c + vec2(-10.0 * sc, -2.0 * sc), c + vec2(0.0, -16.0 * sc), c + vec2(-2.0 * sc, 2.0 * sc), rgb(0.10, 0.05, 0.06)); // wings
             draw_triangle(c + vec2(10.0 * sc, -2.0 * sc), c + vec2(0.0, -16.0 * sc), c + vec2(2.0 * sc, 2.0 * sc), rgb(0.10, 0.05, 0.06));
