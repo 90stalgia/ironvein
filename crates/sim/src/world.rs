@@ -2238,14 +2238,15 @@ impl World {
             }
         }
 
-        // --- BOSSES walk on the deep blood moons (once each, mid-night) ---
-        if blood && night_tick == 1200 && night_no + 1 >= 7 && !self.ents.iter().any(|e| e.kind == Kind::Lich) {
+        // --- BOSSES walk mid-night: the Lich as a foretaste on the 2nd night, then
+        //     THE WARLOCK on the **third night** (rising on the third day) ---
+        if night_tick == 1200 && night_no + 1 >= 2 && !self.ents.iter().any(|e| e.kind == Kind::Lich) {
             if let Some(t) = self.random_edge_tile().and_then(|e| self.find_free_tile_near(e, 10)) {
                 self.spawn_monster(Kind::Lich, t);
                 self.push_chat(NEUTRAL, "A chill spreads — THE LICH rises. Hold your settlement.".into());
             }
         }
-        if blood && night_tick == 1500 && night_no + 1 >= 14 && !self.ents.iter().any(|e| e.kind == Kind::Warlock) {
+        if night_tick == 1500 && night_no + 1 >= 3 && !self.ents.iter().any(|e| e.kind == Kind::Warlock) {
             if let Some(t) = self.random_edge_tile().and_then(|e| self.find_free_tile_near(e, 10)) {
                 self.spawn_monster(Kind::Warlock, t);
                 self.push_chat(NEUTRAL, "THE WARLOCK WALKS. The puppeteer has come for you all — unite, or fall.".into());
