@@ -17,6 +17,14 @@
   <canvas id="glcanvas" tabindex="1"></canvas>
   <div id="loading">IRONVEIN — booting the valley…</div>
 
+  <script>
+    // Right-click is a game input (move / attack / rally), not a request for the
+    // browser context menu — suppress it on the canvas.
+    document.getElementById("glcanvas").addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+    });
+  </script>
+
   <!-- macroquad/miniquad JS runtime (vendored in js/) -->
   <script src="js/mq_js_bundle.js"></script>
   <!-- IRONVEIN's serverless networking plugin: registered BEFORE wasm loads.
