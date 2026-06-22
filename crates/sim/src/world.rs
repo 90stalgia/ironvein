@@ -2077,18 +2077,67 @@ impl World {
     }
 
     /// DEBUG/CHEAT (solo testing only — bypasses lockstep, so don't use in MP):
-    /// drop straight into the netherealm with a war-chest of Essence to build the
-    /// tier-3 toys. Wired to a hidden key in the client.
+    /// drop straight into the netherealm with EVERYTHING you need to try the whole
+    /// tier — a war-chest of every resource AND a full, powered, tech-unlocked base
+    /// (so the Tesla Coil / Rift Altar / Hell Cannon etc. aren't locked). Wired to a
+    /// hidden key in the client.
     pub fn cheat_descend(&mut self) {
         for p in self.players.iter_mut() {
             if p.joined && !p.defeated {
-                p.essence = p.essence.saturating_add(2000);
-                p.credits = p.credits.saturating_add(5000);
+                p.essence = p.essence.saturating_add(3000);
+                p.credits = p.credits.saturating_add(10000);
+                p.wood = p.wood.saturating_add(3000);
+                p.stone = p.stone.saturating_add(3000);
+                p.food = p.food.saturating_add(3000);
             }
         }
         if self.realm == Realm::Overworld {
             self.descend_to_nether();
         }
+        // hand each survivor a full, powered, tech-unlocked base next to their yard
+        let survivors: Vec<Pid> = self.players.iter().enumerate().filter(|(_, p)| p.joined && !p.defeated).map(|(i, _)| i as Pid).collect();
+        for pid in survivors {
+            let yard = self.ents.iter().find(|e| e.owner == pid && e.kind == Kind::ConYard).map(|e| e.tile());
+            if let Some(yard) = yard {
+                for k in [Kind::TechCenter, Kind::EssenceReactor, Kind::Reactor, Kind::Barracks, Kind::Factory, Kind::Refinery] {
+                    self.cheat_build(pid, k, yard);
+                }
+            }
+        }
+    }
+
+    /// Place a finished building of `kind` for `pid` at the first free footprint
+    /// near `anchor` (cheat helper).
+    fn cheat_build(&mut self, pid: Pid, kind: Kind, anchor: Tp) {
+        let (fw, fh) = stats(kind).footprint;
+        let mut spot: Option<Tp> = None;
+        'search: for rad in 1..26 {
+            for dy in -rad..=rad {
+                for dx in -rad..=rad {
+                    let at = Tp::new(anchor.x + dx, anchor.y + dy);
+                    if self.footprint_open(at, (fw, fh)) {
+                        spot = Some(at);
+                        break 'search;
+                    }
+                }
+            }
+        }
+        let Some(at) = spot else { return };
+        for yy in 0..fh {
+            for xx in 0..fw {
+                let t = Tp::new(at.x + xx, at.y + yy);
+                if !self.map.terrain_at(t).buildable() {
+                    self.map.set_terrain(t, Terrain::Ash);
+                }
+                self.map.set_ore(t, 0);
+            }
+        }
+        let id = self.ents.spawn(pid, kind, Fp { x: at.x * FX, y: at.y * FX });
+        if let Some(e) = self.ents.get_mut(id) {
+            e.done = true;
+            e.hp = stats(kind).max_hp;
+        }
+        self.map.stamp_block(at, (fw, fh), id.idx + 1);
     }
 
     /// THE WAY HOME: a Rift Altar ringed by 5+ Tesla Coils (in the nether) charges,
