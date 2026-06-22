@@ -64,9 +64,13 @@ pub enum Kind {
     //      wildlife (NEUTRAL) you hunt for meat ----
     FoodSilo = 41,
     Deer = 42,
+    // ---- tier-2 defence: a high-voltage zapper. Tech-Center gated, NO Essence;
+    //      power-hungry (pair it with a Reactor). Melts armour and structures —
+    //      the accessible cousin of the Essence-locked Obelisk. ----
+    TeslaCoil = 43,
 }
 
-pub const ALL_BUILDINGS: [Kind; 21] = [
+pub const ALL_BUILDINGS: [Kind; 22] = [
     Kind::ConYard,
     Kind::PowerPlant,
     Kind::Refinery,
@@ -88,6 +92,7 @@ pub const ALL_BUILDINGS: [Kind; 21] = [
     Kind::MissileTurret,
     Kind::Gate,
     Kind::Obelisk,
+    Kind::TeslaCoil,
 ];
 
 pub const ALL_UNITS: [Kind; 12] = [
@@ -151,13 +156,14 @@ impl Kind {
             40 => Kind::MissileSilo,
             41 => Kind::FoodSilo,
             42 => Kind::Deer,
+            43 => Kind::TeslaCoil,
             _ => return None,
         })
     }
     pub fn is_building(self) -> bool {
         // buildings are 0..20, plus a few that sit above the unit/monster range
         // (the tier-3 Obelisk, the Starship landing craft, the Missile Silo)
-        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo)
+        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo | Kind::TeslaCoil)
     }
     pub fn is_unit(self) -> bool {
         !self.is_building()
@@ -171,7 +177,7 @@ impl Kind {
     /// Auto-firing defensive structures (acquire & shoot when idle; go offline
     /// on low power).
     pub fn is_defense(self) -> bool {
-        matches!(self, Kind::GuardTower | Kind::CannonTower | Kind::Pillbox | Kind::MissileTurret | Kind::Obelisk | Kind::Starship)
+        matches!(self, Kind::GuardTower | Kind::CannonTower | Kind::Pillbox | Kind::MissileTurret | Kind::Obelisk | Kind::Starship | Kind::TeslaCoil)
     }
     /// A supernatural night-creature: NEUTRAL-owned, hostile to every nation,
     /// and burns in daylight unless it finds shade.
@@ -208,7 +214,7 @@ pub fn income_of(k: Kind) -> u32 {
 /// finished, before this can be built or trained — the tech tier.
 pub fn requires(k: Kind) -> Option<Kind> {
     match k {
-        Kind::MissileTurret | Kind::Sniper | Kind::Artillery | Kind::HeavyTank | Kind::Obelisk | Kind::Champion | Kind::MissileSilo => Some(Kind::TechCenter),
+        Kind::MissileTurret | Kind::Sniper | Kind::Artillery | Kind::HeavyTank | Kind::Obelisk | Kind::Champion | Kind::MissileSilo | Kind::TeslaCoil => Some(Kind::TechCenter),
         _ => None,
     }
 }
@@ -269,6 +275,9 @@ pub fn stats(k: Kind) -> Stats {
         Gate => s("Gate", 500, 150, 35, 0, 0, 0, 0, 0, 0, (1, 1), None),
         // tier-3 super-defence: a long-range arcane death-ray (Essence-gated)
         Obelisk => s("Obelisk", 900, 1500, 240, 0, 95, 9, 30, 11, -55, (1, 1), None),
+        // tier-2 zapper: shorter range than the Obelisk and no Essence, but a
+        // heavy hitter — and a power hog, so feed it from a Reactor.
+        TeslaCoil => s("Tesla Coil", 650, 1300, 190, 0, 95, 7, 18, 9, -80, (1, 1), None),
 
         // name                hp   cost time spd dmg rng rof sight power foot   built_by
         Rifleman => s("Rifleman", 100, 100, 50, 24, 8, 3, 10, 4, 0, (1, 1), Some(Barracks)),
@@ -345,6 +354,7 @@ pub fn wood_cost(k: Kind) -> u32 {
         OreSilo => 40,
         PowerPlant => 40,
         GuardTower => 30,
+        TeslaCoil => 30,
         // units: handles, stocks, crates
         Harvester => 30,
         HeavyTank => 30,
@@ -365,6 +375,7 @@ pub fn stone_cost(k: Kind) -> u32 {
         TechCenter => 120,
         Factory => 100,
         MissileTurret => 90,
+        TeslaCoil => 90,
         CannonTower => 80,
         Refinery => 80,
         Gate => 70,
@@ -409,6 +420,7 @@ pub fn dmg_pct(attacker: Kind, target: Kind) -> i32 {
             | Kind::Obelisk
             | Kind::HellTank
             | Kind::Starship
+            | Kind::TeslaCoil
     );
     match (rocket, target.is_infantry(), target.is_building()) {
         (true, true, _) => 60,    // explosives vs infantry: meh

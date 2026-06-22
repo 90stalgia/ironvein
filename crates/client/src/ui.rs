@@ -11,7 +11,7 @@ use macroquad::prelude::*;
 pub const SIDEBAR_W: f32 = 176.0;
 const MINI: f32 = 160.0;
 
-pub const BUILD_TAB: [Kind; 22] = [
+pub const BUILD_TAB: [Kind; 23] = [
     Kind::PowerPlant,
     Kind::Reactor,
     Kind::Refinery,
@@ -24,6 +24,7 @@ pub const BUILD_TAB: [Kind; 22] = [
     Kind::Pillbox,
     Kind::CannonTower,
     Kind::MissileTurret,
+    Kind::TeslaCoil,
     Kind::Obelisk,
     Kind::MissileSilo,
     Kind::RepairDepot,

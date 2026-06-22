@@ -1162,6 +1162,37 @@ fn draw_iso_building(w: &World, e: &ironvein_sim::Ent, cam: Vec2, col: Color, se
             }
             g - vec2(0.0, 16.0)
         }
+        // -- Tesla Coil: a ceramic-stacked mast under a crackling electrode -----
+        Kind::TeslaCoil => {
+            let cg = (bn + be + bs + bw) * 0.25;
+            cylinder(cg.x, cg.y + 2.0, 6.0, 7.0, 3.2, rgb(0.22, 0.23, 0.27)); // squat base
+            let mast_h = 34.0;
+            let topp = vec2(cg.x, cg.y - mast_h);
+            draw_line(cg.x, cg.y - 2.0, topp.x, topp.y, 3.0, rgb(0.30, 0.31, 0.36)); // mast
+            for d in 0..5 {
+                // stacked insulator discs climbing the mast (wider at the bottom)
+                let y = cg.y - 4.0 - d as f32 * (mast_h - 8.0) / 5.0;
+                let r = 5.0 - d as f32 * 0.5;
+                ellipse(cg.x, y, r, r * 0.42, rgb(0.55, 0.46, 0.32));
+            }
+            let pulse = 0.5 + 0.5 * (tick as f32 * 0.25).sin();
+            draw_circle(topp.x, topp.y, 4.6, rgb(0.62, 0.66, 0.74)); // metal toroid
+            glow(topp, 11.0, rgb(0.45, 0.82, 1.0), 0.35 + 0.5 * pulse);
+            // a few jagged idle arcs spitting off the electrode
+            for k in 0..3 {
+                let seed = (tick / 4 + k * 11) as f32;
+                let ang = seed * 1.7 + k as f32 * 2.1;
+                let len = 8.0 + (seed * 0.9).sin().abs() * 7.0;
+                let ex = topp.x + ang.cos() * len;
+                let ey = topp.y + ang.sin() * len * 0.7 - 2.0;
+                let mx = (topp.x + ex) * 0.5 + (seed * 2.3).sin() * 3.0;
+                let my = (topp.y + ey) * 0.5 + (seed * 1.9).cos() * 3.0;
+                let arc = Color::new(0.72, 0.92, 1.0, 0.78 * pulse);
+                draw_line(topp.x, topp.y, mx, my, 1.4, arc);
+                draw_line(mx, my, ex, ey, 1.0, arc);
+            }
+            topp
+        }
         _ => {
             let r = iso_box(bn, be, bs, bw, bld_height(fw, fh), rgb(0.4, 0.4, 0.43));
             (r[0] + r[1] + r[2] + r[3]) * 0.25
