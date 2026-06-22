@@ -1576,6 +1576,11 @@ fn handle_input(app: &mut App, dt: f32) {
     // ---- hotkeys ----
     if is_key_pressed(KeyCode::F1) { app.help = !app.help; }
     if is_key_pressed(KeyCode::F5) { app.save_now(true); }
+    // CHEAT (solo testing only — bypasses lockstep): Ctrl+Shift+N drops you straight
+    // into the netherealm with a war-chest of Essence to try the tier-3 toys.
+    if is_key_pressed(KeyCode::N) && is_key_down(KeyCode::LeftControl) && is_key_down(KeyCode::LeftShift) {
+        app.session.world.cheat_descend();
+    }
     if is_key_pressed(KeyCode::Escape) {
         if app.nuke_arm.is_some() { app.nuke_arm = None; }
         else if app.placing.is_some() { app.placing = None; }

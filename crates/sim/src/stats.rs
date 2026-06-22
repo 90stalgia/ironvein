@@ -79,9 +79,15 @@ pub enum Kind {
     // size of a starship that swells with rage as it's wounded. Slay it = the true
     // victory.
     Moloch = 48,
+    // ---- ESSENCE TIER ("crazier things"): forged from the dark you mine in the
+    //      netherealm. Tech-Center + Essence gated. ----
+    HellCannon = 49,    // a colossal essence artillery — enormous range and damage
+    EssenceReactor = 50, // burns Essence for vast power (+600)
+    SoulAltar = 51,     // COMMAND THE DARK: seizes nearby monsters to your side
+    Revenant = 52,      // a corrupted super-soldier you raise from the dark
 }
 
-pub const ALL_BUILDINGS: [Kind; 22] = [
+pub const ALL_BUILDINGS: [Kind; 25] = [
     Kind::ConYard,
     Kind::PowerPlant,
     Kind::Refinery,
@@ -104,6 +110,9 @@ pub const ALL_BUILDINGS: [Kind; 22] = [
     Kind::Gate,
     Kind::Obelisk,
     Kind::TeslaCoil,
+    Kind::HellCannon,
+    Kind::EssenceReactor,
+    Kind::SoulAltar,
 ];
 
 pub const ALL_UNITS: [Kind; 12] = [
@@ -173,13 +182,17 @@ impl Kind {
             46 => Kind::Balrog,
             47 => Kind::EssenceSmoke,
             48 => Kind::Moloch,
+            49 => Kind::HellCannon,
+            50 => Kind::EssenceReactor,
+            51 => Kind::SoulAltar,
+            52 => Kind::Revenant,
             _ => return None,
         })
     }
     pub fn is_building(self) -> bool {
         // buildings are 0..20, plus a few that sit above the unit/monster range
         // (the tier-3 Obelisk, the Starship landing craft, the Missile Silo)
-        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo | Kind::TeslaCoil | Kind::NetherPortal)
+        (self as u8) < 20 || matches!(self, Kind::Obelisk | Kind::Starship | Kind::MissileSilo | Kind::FoodSilo | Kind::TeslaCoil | Kind::NetherPortal | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar)
     }
     pub fn is_unit(self) -> bool {
         !self.is_building()
@@ -193,7 +206,7 @@ impl Kind {
     /// Auto-firing defensive structures (acquire & shoot when idle; go offline
     /// on low power).
     pub fn is_defense(self) -> bool {
-        matches!(self, Kind::GuardTower | Kind::CannonTower | Kind::Pillbox | Kind::MissileTurret | Kind::Obelisk | Kind::Starship | Kind::TeslaCoil)
+        matches!(self, Kind::GuardTower | Kind::CannonTower | Kind::Pillbox | Kind::MissileTurret | Kind::Obelisk | Kind::Starship | Kind::TeslaCoil | Kind::HellCannon)
     }
     /// A supernatural night-creature: NEUTRAL-owned, hostile to every nation,
     /// and burns in daylight unless it finds shade.
@@ -230,7 +243,8 @@ pub fn income_of(k: Kind) -> u32 {
 /// finished, before this can be built or trained — the tech tier.
 pub fn requires(k: Kind) -> Option<Kind> {
     match k {
-        Kind::MissileTurret | Kind::Sniper | Kind::Artillery | Kind::HeavyTank | Kind::Obelisk | Kind::Champion | Kind::MissileSilo | Kind::TeslaCoil => Some(Kind::TechCenter),
+        Kind::MissileTurret | Kind::Sniper | Kind::Artillery | Kind::HeavyTank | Kind::Obelisk | Kind::Champion | Kind::MissileSilo | Kind::TeslaCoil
+        | Kind::HellCannon | Kind::EssenceReactor | Kind::SoulAltar | Kind::Revenant => Some(Kind::TechCenter),
         _ => None,
     }
 }
@@ -239,7 +253,11 @@ pub fn requires(k: Kind) -> Option<Kind> {
 /// mined-out mountains. Only the tier-3 power draws on it. 0 = needs none.
 pub fn essence_cost(k: Kind) -> u32 {
     match k {
+        Kind::HellCannon => 250,
         Kind::Obelisk => 200,
+        Kind::SoulAltar => 200,
+        Kind::EssenceReactor => 180,
+        Kind::Revenant => 175,
         Kind::Champion => 150,
         _ => 0,
     }
@@ -327,6 +345,15 @@ pub fn stats(k: Kind) -> Stats {
         // MOLOCH — the netherealm's master, a colossal devil. Vast HP; it swells and
         // rages as it's wounded (the gfx grows with lost HP). Slay it = true victory.
         Moloch => s("Moloch", 26000, 0, 0, 14, 120, 7, 6, 22, 0, (1, 1), None),
+        // ---- ESSENCE TIER ----
+        // a colossal essence artillery: map-spanning range, devastating, slow to reload
+        HellCannon => s("Hell Cannon", 900, 1800, 260, 0, 150, 12, 80, 12, -90, (2, 2), None),
+        // burns Essence for vast power
+        EssenceReactor => s("Essence Reactor", 1000, 1500, 200, 0, 0, 0, 0, 5, 600, (2, 2), None),
+        // command the dark: it seizes nearby monsters to your side (see sys_support)
+        SoulAltar => s("Soul Altar", 800, 1500, 220, 0, 0, 0, 0, 9, -60, (2, 2), None),
+        // a corrupted super-soldier raised from the dark — fast, brutal, tough
+        Revenant => s("Revenant", 650, 700, 150, 28, 62, 4, 6, 10, 0, (1, 1), Some(Barracks)),
         // tier-3 hero: a one-soldier army (Essence-gated, built at the Factory)
         Champion => s("Champion", 1700, 1800, 280, 30, 52, 4, 6, 12, 0, (1, 1), Some(Factory)),
         // capstone: a corrupted war machine the wounded Warlock animates — heavy,
@@ -384,6 +411,9 @@ pub fn wood_cost(k: Kind) -> u32 {
         PowerPlant => 40,
         GuardTower => 30,
         TeslaCoil => 30,
+        EssenceReactor => 60,
+        SoulAltar => 50,
+        Revenant => 20,
         // units: handles, stocks, crates
         Harvester => 30,
         HeavyTank => 30,
@@ -401,8 +431,11 @@ pub fn stone_cost(k: Kind) -> u32 {
     match k {
         ConYard => 200,
         MissileSilo => 160,
+        HellCannon => 140,
         TechCenter => 120,
+        SoulAltar => 100,
         Factory => 100,
+        EssenceReactor => 90,
         MissileTurret => 90,
         TeslaCoil => 90,
         CannonTower => 80,
@@ -452,6 +485,8 @@ pub fn dmg_pct(attacker: Kind, target: Kind) -> i32 {
             | Kind::TeslaCoil
             | Kind::Balrog
             | Kind::Moloch
+            | Kind::HellCannon
+            | Kind::Revenant
     );
     match (rocket, target.is_infantry(), target.is_building()) {
         (true, true, _) => 60,    // explosives vs infantry: meh

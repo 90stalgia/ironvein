@@ -335,6 +335,7 @@ impl World {
         self.sys_loot();
         self.sys_ore_regen();
         self.sys_support();
+        self.sys_dominion();
         self.sys_portal();
         self.sys_recompute();
         if self.tick % 2 == 0 {
@@ -1968,28 +1969,44 @@ impl World {
                 }
             }
         }
-        // drift each cloud a slow random step + decay; collect victims to corrupt
-        let mut corrupt: Vec<Eid> = Vec::new();
-        let smokes: Vec<(Eid, Fp)> = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke && e.hp > 0).map(|e| (e.id, e.pos)).collect();
-        for (sid, spos) in &smokes {
+        // drift each cloud a slow random step + decay; remember live positions
+        let mut smokes: Vec<Fp> = Vec::new();
+        let ids: Vec<Eid> = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke && e.hp > 0).map(|e| e.id).collect();
+        for sid in ids {
             let (dx, dy) = (self.rng.range_i32(-1, 1) * (FX / 6), self.rng.range_i32(-1, 1) * (FX / 6));
-            if let Some(s) = self.ents.get_mut(*sid) {
+            if let Some(s) = self.ents.get_mut(sid) {
                 s.hp -= 4;
                 s.pos.x = (s.pos.x + dx).clamp(FX, (self.map.w - 2) * FX);
                 s.pos.y = (s.pos.y + dy).clamp(FX, (self.map.h - 2) * FX);
-                if s.hp <= 0 {
-                    continue;
-                }
-            }
-            // any owned, mortal unit within ~1 tile of the cloud succumbs
-            let reach = (FX as i64 * 3 / 2) * (FX as i64 * 3 / 2);
-            for e in self.ents.iter() {
-                if e.kind.is_unit() && e.owner != NEUTRAL && e.hp > 0 && !e.kind.is_monster() && e.pos.dist2(*spos) <= reach {
-                    corrupt.push(e.id);
+                if s.hp > 0 {
+                    smokes.push(s.pos);
                 }
             }
         }
-        for id in corrupt {
+        // EXPOSURE, not instant death: a unit in a cloud accrues corruption; out of
+        // it (and not yet doomed) it recovers — so brief contact is survivable. Past
+        // SLEEPER it's locked in but still looks/obeys yours (it "doesn't show it");
+        // past TURN it betrays you — flips NEUTRAL + aggressive.
+        const SLEEPER: u16 = 150; // ~3 s of cumulative exposure: point of no return
+        const TURN: u16 = 240; //  then ~2 s more before it actually turns
+        let reach = (FX as i64 * 3 / 2) * (FX as i64 * 3 / 2);
+        let mut flips: Vec<Eid> = Vec::new();
+        for i in 0..self.ents.len_slots() {
+            let Some(e) = self.ents.slots[i].as_mut() else { continue };
+            if !e.kind.is_unit() || e.owner == NEUTRAL || e.kind.is_monster() || e.hp <= 0 {
+                continue;
+            }
+            let exposed = smokes.iter().any(|s| e.pos.dist2(*s) <= reach);
+            if exposed {
+                e.corrupt = e.corrupt.saturating_add(5);
+            } else if e.corrupt < SLEEPER {
+                e.corrupt = e.corrupt.saturating_sub(3); // pull it clear and it recovers
+            }
+            if e.corrupt >= TURN {
+                flips.push(e.id);
+            }
+        }
+        for id in flips {
             if let Some(e) = self.ents.get_mut(id) {
                 let at = e.center();
                 e.owner = NEUTRAL;
@@ -1997,13 +2014,74 @@ impl World {
                 e.target = None;
                 e.goal = None;
                 e.path.clear();
-                self.events.push(VisEvent::Captured { at }); // a purple claim
+                e.corrupt = 0;
+                self.events.push(VisEvent::Captured { at }); // the betrayal, a purple claim
             }
         }
         // reap dissipated clouds
         let dead: Vec<Eid> = self.ents.iter().filter(|e| e.kind == Kind::EssenceSmoke && e.hp <= 0).map(|e| e.id).collect();
         for id in dead {
             self.ents.despawn(id);
+        }
+    }
+
+    /// COMMAND THE DARK: a powered Soul Altar, fed Essence, periodically SEIZES the
+    /// nearest wild monster (grunts, never a boss) to its owner — the monster turns
+    /// and fights for you. The mirror of the essence smoke. Deterministic.
+    fn sys_dominion(&mut self) {
+        if self.tick % 50 != 0 {
+            return; // a measured cadence, ~5 s
+        }
+        let altars: Vec<(Pid, Fp)> = self
+            .ents
+            .iter()
+            .filter(|e| e.kind == Kind::SoulAltar && e.done && e.hp > 0)
+            .map(|e| (e.owner, e.center()))
+            .collect();
+        let cost = 40u32;
+        let range2 = (16 * FX as i64) * (16 * FX as i64);
+        for (pid, ac) in altars {
+            let ok = self.players.get(pid as usize).map(|p| p.essence >= cost && !p.low_power() && !p.defeated).unwrap_or(false);
+            if !ok {
+                continue;
+            }
+            // nearest convertible wild monster (no bosses, no war-hulks) in range
+            let mut best: Option<(i64, Eid)> = None;
+            for e in self.ents.iter() {
+                if e.owner == NEUTRAL && e.kind.is_monster() && !e.kind.is_boss() && e.kind != Kind::HellTank && e.hp > 0 {
+                    let d = e.center().dist2(ac);
+                    if d <= range2 && best.map_or(true, |(bd, _)| d < bd) {
+                        best = Some((d, e.id));
+                    }
+                }
+            }
+            if let Some((_, mid)) = best {
+                let at = self.ents.get(mid).map(|e| e.center()).unwrap_or(ac);
+                if let Some(m) = self.ents.get_mut(mid) {
+                    m.owner = pid;
+                    m.aggressive = true;
+                    m.target = None;
+                }
+                if let Some(p) = self.players.get_mut(pid as usize) {
+                    p.essence = p.essence.saturating_sub(cost);
+                }
+                self.events.push(VisEvent::Captured { at });
+            }
+        }
+    }
+
+    /// DEBUG/CHEAT (solo testing only — bypasses lockstep, so don't use in MP):
+    /// drop straight into the netherealm with a war-chest of Essence to build the
+    /// tier-3 toys. Wired to a hidden key in the client.
+    pub fn cheat_descend(&mut self) {
+        for p in self.players.iter_mut() {
+            if p.joined && !p.defeated {
+                p.essence = p.essence.saturating_add(2000);
+                p.credits = p.credits.saturating_add(5000);
+            }
+        }
+        if self.realm == Realm::Overworld {
+            self.descend_to_nether();
         }
     }
 

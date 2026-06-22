@@ -1254,6 +1254,46 @@ fn draw_iso_building(w: &World, e: &ironvein_sim::Ent, cam: Vec2, col: Color, se
             glow(vec2(cg.x, cg.y - 4.0), 18.0, rgb(0.9, 0.25, 0.55), 0.4 + 0.4 * pulse);
             vec2(cg.x, cg.y - 18.0)
         }
+        // -- Hell Cannon: a heavy breech with a huge ember-mouthed barrel --------
+        Kind::HellCannon => {
+            let r = iso_box(bn, be, bs, bw, 12.0, rgb(0.18, 0.10, 0.10));
+            let top = (r[0] + r[1] + r[2] + r[3]) * 0.25;
+            let bend = top + vec2(18.0, -22.0);
+            draw_line(top.x, top.y, bend.x, bend.y, 6.0, rgb(0.12, 0.08, 0.09)); // barrel
+            draw_line(top.x, top.y, bend.x, bend.y, 2.5, rgb(0.32, 0.10, 0.10));
+            draw_circle(top.x, top.y, 5.0, rgb(0.22, 0.14, 0.14)); // breech
+            draw_circle(bend.x, bend.y, 3.5, rgb(1.0, 0.45, 0.15)); // muzzle ember
+            glow(bend, 12.0, rgb(1.0, 0.4, 0.1), 0.5);
+            top
+        }
+        // -- Essence Reactor: a containment with a pulsing violet core -----------
+        Kind::EssenceReactor => {
+            let r = iso_box(bn, be, bs, bw, 14.0, rgb(0.16, 0.10, 0.20));
+            let top = (r[0] + r[1] + r[2] + r[3]) * 0.25;
+            let pulse = 0.5 + 0.5 * (tick as f32 * 0.1).sin();
+            for dx in [-7.0f32, 7.0] {
+                draw_rectangle(top.x + dx - 1.5, top.y - 12.0, 3.0, 9.0, rgb(0.22, 0.14, 0.26)); // vent stacks
+            }
+            draw_circle(top.x, top.y - 2.0, 7.0, Color::new(0.5, 0.2, 0.7, 0.3 + 0.3 * pulse));
+            draw_circle(top.x, top.y - 2.0, 3.5, rgb(0.78, 0.42, 1.0)); // essence core
+            glow(top - vec2(0.0, 2.0), 14.0, rgb(0.7, 0.3, 1.0), 0.4 + 0.4 * pulse);
+            top - vec2(0.0, 6.0)
+        }
+        // -- Soul Altar: a black altar trailing a command-beam and soul motes ----
+        Kind::SoulAltar => {
+            let cg = (bn + be + bs + bw) * 0.25;
+            cylinder(cg.x, cg.y + 2.0, 5.0, 9.0, 4.5, rgb(0.12, 0.10, 0.16)); // stepped altar
+            let topp = vec2(cg.x, cg.y - 18.0);
+            let pulse = 0.5 + 0.5 * (tick as f32 * 0.08).sin();
+            draw_line(cg.x, cg.y - 4.0, topp.x, topp.y, 2.0, Color::new(0.7, 0.3, 1.0, 0.5 + 0.4 * pulse)); // beam
+            for k in 0..3 {
+                let a = tick as f32 * 0.05 + k as f32 * 2.1;
+                draw_circle(cg.x + a.cos() * 8.0, cg.y - 8.0 + a.sin() * 4.0, 1.6, rgb(0.8, 0.5, 1.0)); // soul motes
+            }
+            draw_circle(topp.x, topp.y, 3.0, rgb(0.85, 0.55, 1.0));
+            glow(topp, 12.0, rgb(0.7, 0.3, 1.0), 0.4 + 0.4 * pulse);
+            topp
+        }
         _ => {
             let r = iso_box(bn, be, bs, bw, bld_height(fw, fh), rgb(0.4, 0.4, 0.43));
             (r[0] + r[1] + r[2] + r[3]) * 0.25
@@ -1549,6 +1589,19 @@ fn draw_iso_unit(w: &World, e: &ironvein_sim::Ent, g: Vec2, col: Color, selected
             draw_circle(c.x - 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3)); // burning eyes
             draw_circle(c.x + 2.0 * sc, c.y - 20.0 * sc, 1.2 * sc, rgb(1.0, 0.9, 0.3));
             draw_line(c.x, c.y - 8.0 * sc, c.x + d.x * 16.0 * sc, c.y - 8.0 * sc + d.y * 16.0 * sc, 3.0 * sc, glowc); // firewhip
+        }
+        Kind::Revenant => {
+            // a corrupted super-soldier: black armour over team colour, a violet aura
+            glow(c - vec2(0.0, 3.0), 9.0, rgb(0.6, 0.2, 0.8), 0.4);
+            draw_rectangle(c.x - 3.0, c.y + 2.0, 2.0, 5.0, shade(col, 0.5)); // legs
+            draw_rectangle(c.x + 1.0, c.y + 2.0, 2.0, 5.0, shade(col, 0.5));
+            draw_rectangle(c.x - 4.0, c.y - 4.0, 8.0, 8.0, rgb(0.16, 0.10, 0.18)); // dark armour
+            draw_rectangle(c.x - 4.0, c.y - 4.0, 2.6, 8.0, mix(col, rgb(0.5, 0.2, 0.7), 0.5)); // team-tinted edge
+            draw_circle(c.x, c.y - 6.5, 2.6, rgb(0.12, 0.07, 0.12)); // hooded head
+            draw_circle(c.x - 0.9, c.y - 6.5, 0.6, rgb(0.9, 0.4, 1.0)); // burning eyes
+            draw_circle(c.x + 0.9, c.y - 6.5, 0.6, rgb(0.9, 0.4, 1.0));
+            draw_line(c.x, c.y - 1.0, c.x + d.x * 13.0, c.y - 1.0 + d.y * 13.0, 2.2, rgb(0.6, 0.25, 0.8)); // corrupt blade
+            draw_circle(c.x + d.x * 13.0, c.y - 1.0 + d.y * 13.0, 1.4, rgb(0.95, 0.6, 1.0));
         }
         _ => {
             draw_circle(c.x, c.y, 5.0, col);

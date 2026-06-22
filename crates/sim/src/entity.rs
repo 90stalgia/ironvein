@@ -86,6 +86,11 @@ pub struct Ent {
     // -- construction (buildings under construction) --
     pub done: bool,
     pub con_progress: u32,
+
+    /// Essence-smoke exposure (netherealm). Builds while in a cloud, decays out of
+    /// it; past a threshold the unit is a doomed "sleeper", then it turns. Ephemeral
+    /// (not serialised/hashed) — a transient like a timer, reset on load.
+    pub corrupt: u16,
 }
 
 impl Ent {
@@ -118,6 +123,7 @@ impl Ent {
             rally: None,
             done: true,
             con_progress: 0,
+            corrupt: 0,
         }
     }
 

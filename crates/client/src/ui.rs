@@ -11,7 +11,10 @@ use macroquad::prelude::*;
 pub const SIDEBAR_W: f32 = 176.0;
 const MINI: f32 = 160.0;
 
-pub const BUILD_TAB: [Kind; 23] = [
+pub const BUILD_TAB: [Kind; 26] = [
+    Kind::EssenceReactor,
+    Kind::HellCannon,
+    Kind::SoulAltar,
     Kind::PowerPlant,
     Kind::Reactor,
     Kind::Refinery,
@@ -36,7 +39,7 @@ pub const BUILD_TAB: [Kind; 23] = [
     Kind::Gate,
     Kind::Road,
 ];
-pub const UNIT_TAB: [Kind; 12] = [
+pub const UNIT_TAB: [Kind; 13] = [
     Kind::Rifleman,
     Kind::Grenadier,
     Kind::Rocketeer,
@@ -49,6 +52,7 @@ pub const UNIT_TAB: [Kind; 12] = [
     Kind::HeavyTank,
     Kind::Artillery,
     Kind::Champion,
+    Kind::Revenant,
 ];
 
 pub struct Minimap {
