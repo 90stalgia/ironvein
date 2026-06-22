@@ -332,6 +332,9 @@ struct App {
     shake: f32,
     /// full-screen white-out 0..1 from a near nuke detonation; decays each frame.
     flash: f32,
+    /// violet bloom 0..1 the moment the rift swallows you into the nether (so the
+    /// realm fades up out of a blinding flash rather than hard-cutting). Decays.
+    descent_flash: f32,
 }
 
 impl App {
@@ -420,6 +423,8 @@ impl App {
             self.lerp.clear();
             self.sel.clear();
             self.fx.clear();
+            self.descent_flash = 1.0; // the realm fades up out of a blinding bloom
+            self.shake = 1.0; // a jolt as the world snaps over
         }
         // shift interpolation anchors
         let mut seen: Vec<(u32, u32)> = Vec::with_capacity(64);
@@ -1210,6 +1215,7 @@ async fn main() {
         markers: Vec::new(),
         shake: 0.0,
         flash: 0.0,
+        descent_flash: 0.0,
     };
     app.last_saved = app.session.world.tick;
 
@@ -1426,6 +1432,7 @@ async fn main() {
         // screen shake / flash decay (frame-rate independent)
         app.shake = (app.shake - dt as f32 * 1.7).max(0.0);
         app.flash = (app.flash - dt as f32 * 2.4).max(0.0);
+        app.descent_flash = (app.descent_flash - dt as f32 * 1.6).max(0.0);
         // the descent build-up: a tremor that rises as the rift takes hold
         if app.session.world.descent_at != 0 {
             let togo = app.session.world.descent_at.saturating_sub(app.session.world.tick) as f32;
@@ -2032,7 +2039,16 @@ fn draw(app: &mut App) {
             let band = (sh * 0.5) * p * p;
             draw_rectangle(0.0, 0.0, sw, band, Color::new(0.02, 0.0, 0.04, 0.9 * p));
             draw_rectangle(0.0, sh - band, sw, band, Color::new(0.02, 0.0, 0.04, 0.9 * p));
+            // CLIMAX: a blinding violet-white bloom in the final ~0.6 s
+            let bloom = ((p - 0.8) / 0.2).clamp(0.0, 1.0);
+            if bloom > 0.0 {
+                draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.85, 0.7, 1.0, bloom * bloom * 0.9));
+            }
         }
+    }
+    // ...then the realm fades up out of that bloom on the other side
+    if app.descent_flash > 0.0 {
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.82, 0.68, 1.0, (app.descent_flash * app.descent_flash * 0.9).min(0.9)));
     }
 
     // ---- UI overlays, drawn crisp at native resolution ----

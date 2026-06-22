@@ -1236,22 +1236,54 @@ fn draw_iso_building(w: &World, e: &ironvein_sim::Ent, cam: Vec2, col: Color, se
             }
             topp
         }
-        // -- the Nether Portal: a swirling rift framed by jagged stones ---------
+        // -- the Nether Portal: a swirling rift that ERUPTS as the descent fires --
         Kind::NetherPortal => {
             let cg = (bn + be + bs + bw) * 0.25;
-            draw_circle(cg.x, cg.y + 2.0, 16.0, Color::new(0.05, 0.02, 0.04, 0.6)); // scorched ground
-            // jagged stones framing the rift
+            let center = vec2(cg.x, cg.y - 4.0);
+            // `surge` ramps 0→1 across the descent countdown — the rift goes wild
+            let surge = if w.descent_at != 0 {
+                (1.0 - w.descent_at.saturating_sub(w.tick) as f32 / 36.0).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            draw_circle(cg.x, cg.y + 2.0, 16.0 + surge * 12.0, Color::new(0.05, 0.02, 0.04, 0.6)); // scorched ground
             draw_triangle(vec2(cg.x - 14.0, cg.y + 4.0), vec2(cg.x - 10.0, cg.y - 18.0), vec2(cg.x - 7.0, cg.y + 4.0), rgb(0.13, 0.08, 0.15));
             draw_triangle(vec2(cg.x + 14.0, cg.y + 4.0), vec2(cg.x + 10.0, cg.y - 18.0), vec2(cg.x + 7.0, cg.y + 4.0), rgb(0.13, 0.08, 0.15));
-            // concentric pulsing rings of hellfire
+            if surge > 0.0 {
+                // expanding shockwave rings rushing outward
+                for ring in 0..3 {
+                    let phase = ((tick as f32 * 0.07) + ring as f32 * 0.34) % 1.0;
+                    let r = 6.0 + phase * (26.0 + surge * 34.0);
+                    let a = (1.0 - phase) * (0.4 + 0.5 * surge);
+                    draw_circle_lines(center.x, center.y, r, 1.5 + surge * 1.5, Color::new(0.9, 0.3 + 0.4 * surge, 0.7, a));
+                }
+                // jagged lightning whipping out of the rift
+                let bolts = 4 + (surge * 7.0) as i32;
+                for b in 0..bolts {
+                    let ang = b as f32 * std::f32::consts::TAU / bolts as f32 + (tick as f32 * 0.3 + b as f32 * 2.4).sin() * 0.4;
+                    let len = (16.0 + surge * 30.0) * (0.6 + 0.5 * ((tick as i32 + b * 7) as f32 * 0.5).sin().abs());
+                    let ex = center.x + ang.cos() * len;
+                    let ey = center.y + ang.sin() * len * 0.7;
+                    let mx = (center.x + ex) * 0.5 + ((tick as i32 + b * 13) as f32).sin() * 4.0;
+                    let my = (center.y + ey) * 0.5 + ((tick as i32 + b * 5) as f32).cos() * 4.0;
+                    let lc = Color::new(0.85, 0.5 + 0.4 * surge, 1.0, 0.6 + 0.4 * surge);
+                    draw_line(center.x, center.y, mx, my, 1.6, lc);
+                    draw_line(mx, my, ex, ey, 1.2, lc);
+                }
+                // a column of light tearing up from the rift
+                let h = 20.0 + surge * 60.0;
+                draw_line(center.x, center.y, center.x, center.y - h, 3.0 + surge * 5.0, Color::new(0.85, 0.45 + 0.5 * surge, 1.0, 0.3 + 0.5 * surge));
+            }
+            // concentric pulsing rings of hellfire (brighter under surge)
             let pulse = 0.5 + 0.5 * (tick as f32 * 0.12).sin();
             for k in 0..4 {
-                let r = 14.0 - k as f32 * 3.0;
-                let a = (0.35 + 0.55 * pulse * (1.0 - k as f32 * 0.2)).min(1.0);
-                draw_circle_lines(cg.x, cg.y - 4.0, r, 2.0, Color::new(0.95, 0.34 - k as f32 * 0.05, 0.5 - k as f32 * 0.08, a));
+                let r = (14.0 - k as f32 * 3.0) * (1.0 + surge * 0.4);
+                let a = (0.35 + 0.55 * pulse * (1.0 - k as f32 * 0.2) + surge * 0.4).min(1.0);
+                draw_circle_lines(center.x, center.y, r, 2.0, Color::new(0.95, 0.34 - k as f32 * 0.05, 0.5 - k as f32 * 0.08, a));
             }
-            draw_circle(cg.x, cg.y - 4.0, 5.0, rgb(0.02, 0.0, 0.03)); // the void at the centre
-            glow(vec2(cg.x, cg.y - 4.0), 18.0, rgb(0.9, 0.25, 0.55), 0.4 + 0.4 * pulse);
+            // the void at the centre brightens to a blinding singularity at the climax
+            draw_circle(center.x, center.y, 5.0 + surge * 7.0, mix(rgb(0.02, 0.0, 0.03), rgb(1.0, 0.85, 1.0), surge));
+            glow(center, 18.0 + surge * 44.0, mix(rgb(0.9, 0.25, 0.55), rgb(1.0, 0.7, 1.0), surge), 0.4 + 0.6 * surge);
             vec2(cg.x, cg.y - 18.0)
         }
         // -- Hell Cannon: a heavy breech with a huge ember-mouthed barrel --------
