@@ -2188,6 +2188,11 @@ impl World {
             self.return_snapshot = snap;
             return;
         };
+        // CRITICAL: keep the clock MONOTONIC. The snapshot's tick is the descent
+        // moment (in the past); the lockstep Session buckets commands by tick and
+        // would deadlock if the world's tick jumped backwards. So the overworld
+        // resumes at the current clock (it "kept turning" while we were below).
+        let now = self.tick;
         // the raid's spoils: bring home exactly what you're carrying
         for (pid, p) in self.players.iter().enumerate() {
             if let Some(rp) = restored.players.get_mut(pid) {
@@ -2220,6 +2225,7 @@ impl World {
                 }
             }
         }
+        restored.tick = now;
         restored.realm = Realm::Overworld;
         restored.return_snapshot = Vec::new();
         restored.push_chat(NEUTRAL, "THE GATE OPENS. You claw back to the overworld — your colony stands as you left it, and the spoils of the deep come home with you.".into());
@@ -3207,12 +3213,20 @@ mod nether_tests {
         a.descend_to_nether();
         b.descend_to_nether();
         assert!(!a.return_snapshot.is_empty(), "descent must snapshot the overworld");
+        // spend real time in the nether so the snapshot tick is now in the PAST —
+        // the return must keep the clock monotonic (or the lockstep session deadlocks)
+        for _ in 0..80 {
+            a.step(&[]);
+            b.step(&[]);
+        }
+        let before = a.tick;
         // a raid spoil to verify it comes home
         a.players[0].essence = 999;
         b.players[0].essence = 999;
         a.return_to_overworld();
         b.return_to_overworld();
         assert_eq!(a.realm, Realm::Overworld, "we're home");
+        assert_eq!(a.tick, before, "the clock must NOT jump backwards on return");
         assert!(a.return_snapshot.is_empty(), "snapshot is consumed on return");
         assert_eq!(a.players[0].essence, 999, "the spoils came home");
         assert!(a.ents.iter().any(|e| e.kind.is_building() && e.owner == 0), "the overworld base was restored");
